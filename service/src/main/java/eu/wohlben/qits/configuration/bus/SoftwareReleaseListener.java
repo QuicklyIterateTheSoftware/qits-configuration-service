@@ -7,15 +7,29 @@ import eu.wohlben.qits.eventstream.control.CanonicalJson;
 import eu.wohlben.qits.eventstream.control.EventFrame;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import java.util.Map;
 import java.util.Set;
 import org.jboss.logging.Logger;
 
 /**
- * The bus end of the project-agent image pin: consumes qits-ci's {@code SoftwareRelease} and, when
- * the released package is the {@code qits/project-agent} docker image, writes its version into this
- * service's own store as an env entry on the {@code qits-projects} application.
+ * The bus end of the platform's image pins: consumes qits-ci's {@code SoftwareRelease} and, when the
+ * released package is a docker image this service pins, writes its version into this service's own
+ * store as an env entry on the owning application.
  *
- * <p><b>Why the bus rather than a call.</b> qits-projects starts a project agent per container and
+ * <p>The set of pins is a small immutable map from docker {@code packageName} to a {@link Pin} —
+ * the application the entry lands on and the env-var key the deployer expands. Two images today:
+ *
+ * <ul>
+ *   <li>{@code qits/project-agent} &rarr; {@code env.QITS_PROJECTS_AGENT_IMAGE_VERSION} on {@code
+ *       qits-projects}
+ *   <li>{@code qits/workspace} &rarr; {@code env.QITS_WORKSPACE_IMAGE_VERSION} on {@code
+ *       qits-workspaces}
+ * </ul>
+ *
+ * <p>Adding a third is one more entry in {@link #PINS}; the match, the write, and the failure rules
+ * below all read from the map, so nothing else changes.
+ *
+ * <p><b>Why the bus rather than a call.</b> An owning application starts its image per container and
  * needs to start the version that was just released — a fact only qits-ci knows, the moment its
  * release pipeline goes green. The alternative, qits-ci reaching into this service on every release,
  * would make a config write a synchronous leg of a release and lose it whenever this service was
@@ -31,7 +45,7 @@ import org.jboss.logging.Logger;
  * <h2>The match, and why by the wire strings</h2>
  *
  * <p>A {@code SoftwareRelease} is acted on only when its {@code packageType} is {@code "docker"} and
- * its {@code packageName} is {@code qits/project-agent}. Both are compared as the literal wire values
+ * its {@code packageName} is a key of {@link #PINS}. Both are compared as the literal wire values
  * qits-ci publishes — the {@code SoftwareRelease} javadoc fixes {@code packageType}'s vocabulary as
  * {@code npm/maven/docker/daemon} — rather than through qits-ci's {@code CiArtifact.Type} enum, which
  * lives in a module this service does not (and should not) depend on. The name travels unqualified,
@@ -54,7 +68,7 @@ import org.jboss.logging.Logger;
  * stays owed for the next sweep.
  *
  * <p><b>Poison, and swallowed with a WARN:</b> a payload that will not parse, and one that matches
- * the image but names no version. Neither can succeed on a later offer — the same bytes fail
+ * a pinned image but names no version. Neither can succeed on a later offer — the same bytes fail
  * identically every time — and a throw would hold this consumer's watermark behind one bad event
  * forever.
  */
@@ -65,27 +79,33 @@ public class SoftwareReleaseListener implements QitsDurableEventListener {
 
   /**
    * The storage key of this consumption: it names every {@code consumed_event} row and the {@code
-   * consumer_watermark} this listener is caught up by. Not a label — it survives a rename of this
-   * class, and it is never handed to a listener that means something else.
+   * consumer_watermark} this listener is caught up by. A stable storage key, not a description — its
+   * value long predates the second image, and renaming it would reset the watermark and re-consume
+   * every past release. It survives a rename of this class, and it is never handed to a listener that
+   * means something else.
    */
   static final String CONSUMER_ID = "configuration.project-agent-image";
 
   /** The one event name this listener wants — {@code SoftwareRelease}'s signature. */
   static final String SOFTWARE_RELEASE = "SoftwareRelease";
 
-  /** The docker package this pin is for. The name travels unqualified, so it is matched so. */
-  static final String PROJECT_AGENT_IMAGE = "qits/project-agent";
-
   /** The {@code packageType} value a docker image release carries, as the wire spells it. */
   static final String DOCKER_TYPE = "docker";
 
-  /** Where the released version lands: application, then the env-var key the deployer expands. */
-  static final String APPLICATION = "qits-projects";
-
-  static final String IMAGE_VERSION_KEY = "env.QITS_PROJECTS_AGENT_IMAGE_VERSION";
-
   /** Who the revision records as the writer, the way {@code ConfigurationController.actor()} does. */
   static final String ACTOR = "qits-configuration/software-release-listener";
+
+  /** Where a released image version lands: the application, then the env-var key the deployer expands. */
+  record Pin(String application, String key) {}
+
+  /**
+   * The docker images this service pins, keyed by the unqualified {@code packageName} qits-ci
+   * publishes. Add an image by adding an entry here.
+   */
+  static final Map<String, Pin> PINS =
+      Map.of(
+          "qits/project-agent", new Pin("qits-projects", "env.QITS_PROJECTS_AGENT_IMAGE_VERSION"),
+          "qits/workspace", new Pin("qits-workspaces", "env.QITS_WORKSPACE_IMAGE_VERSION"));
 
   /**
    * The {@code SoftwareRelease} payload wire fields this listener reads, as a local record bound by
@@ -109,9 +129,9 @@ public class SoftwareReleaseListener implements QitsDurableEventListener {
   }
 
   /**
-   * Whether this release is the project-agent image, decided from the payload alone — a pure read,
-   * which is what the seam asks of a predicate, and the reason a {@code SoftwareRelease} for anything
-   * else leaves no claim row behind it.
+   * Whether this release pins one of our images, decided from the payload alone — a pure read, which
+   * is what the seam asks of a predicate, and the reason a {@code SoftwareRelease} for anything else
+   * leaves no claim row behind it.
    *
    * <p>An unreadable payload answers <b>no</b> rather than throwing: the seam keeps offering an event
    * whose predicate throws, which is wrong for one that will read the same bytes and fail
@@ -119,7 +139,7 @@ public class SoftwareReleaseListener implements QitsDurableEventListener {
    */
   @Override
   public boolean selects(EventFrame frame) {
-    return matchedVersion(frame) != null;
+    return matched(frame) != null;
   }
 
   /**
@@ -129,26 +149,31 @@ public class SoftwareReleaseListener implements QitsDurableEventListener {
    */
   @Override
   public void onFrame(EventFrame frame) {
-    String version = matchedVersion(frame);
-    if (version == null) {
+    Matched matched = matched(frame);
+    if (matched == null) {
       // selects() said yes a moment ago on the same immutable frame, so this is unreachable for a
       // match; for a non-selecting frame the funnel never calls onFrame. Cheaper than an assertion.
       return;
     }
-    ConfigurationEntry entry = configuration.upsert(APPLICATION, IMAGE_VERSION_KEY, version, ACTOR);
+    Pin pin = matched.pin();
+    ConfigurationEntry entry =
+        configuration.upsert(pin.application(), pin.key(), matched.version(), ACTOR);
     LOG.infof(
         "SoftwareRelease %s pinned %s=%s (application %s, revision %d)",
-        frame.id(), IMAGE_VERSION_KEY, version, APPLICATION, entry.headRevision);
+        frame.id(), pin.key(), matched.version(), pin.application(), entry.headRevision);
   }
 
+  /** A frame that matched a pin: the pin it hit and the version it carries. */
+  private record Matched(Pin pin, String version) {}
+
   /**
-   * The version this frame releases for {@code qits/project-agent}, or null when it releases
-   * something else or cannot be read at all. Asked twice per event — once by {@link #selects}, once
-   * by {@link #onFrame} — because a predicate the seam calls separately cannot hand state forward,
-   * and one more decode of an already-in-memory string is cheaper than a per-frame cache
-   * that could disagree with itself.
+   * The pin and version this frame releases, or null when it releases something we do not pin or
+   * cannot be read at all. Asked twice per event — once by {@link #selects}, once by {@link
+   * #onFrame} — because a predicate the seam calls separately cannot hand state forward, and one
+   * more decode of an already-in-memory string is cheaper than a per-frame cache that could disagree
+   * with itself.
    */
-  private static String matchedVersion(EventFrame frame) {
+  private static Matched matched(EventFrame frame) {
     SoftwareReleasePayload p;
     try {
       p = CanonicalJson.payloadTo(frame.payload(), SoftwareReleasePayload.class);
@@ -157,7 +182,11 @@ public class SoftwareReleaseListener implements QitsDurableEventListener {
           "SoftwareRelease %s carried an unreadable payload: %s", frame.id(), unreadable.toString());
       return null;
     }
-    if (!DOCKER_TYPE.equals(p.packageType()) || !PROJECT_AGENT_IMAGE.equals(p.packageName())) {
+    if (!DOCKER_TYPE.equals(p.packageType())) {
+      return null;
+    }
+    Pin pin = PINS.get(p.packageName());
+    if (pin == null) {
       return null;
     }
     String version = p.version();
@@ -165,10 +194,10 @@ public class SoftwareReleaseListener implements QitsDurableEventListener {
       // Poison: the image matched but there is nothing to pin, and the same bytes will match-and-fail
       // on every later offer. Settle it with a WARN rather than wedge the watermark behind it.
       LOG.warnf(
-          "SoftwareRelease %s is the project-agent image but names no version; nothing to pin",
-          frame.id());
+          "SoftwareRelease %s is the %s image but names no version; nothing to pin",
+          frame.id(), p.packageName());
       return null;
     }
-    return version;
+    return new Matched(pin, version);
   }
 }

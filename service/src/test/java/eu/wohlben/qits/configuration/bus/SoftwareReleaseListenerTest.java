@@ -76,6 +76,22 @@ class SoftwareReleaseListenerTest {
   }
 
   @Test
+  void workspaceImageReleaseWritesTheWorkspacePin() {
+    CapturingService service = new CapturingService();
+    SoftwareReleaseListener listener = listenerWith(service);
+    EventFrame frame = frameFor("docker", "qits/workspace", "2026.822.101500");
+
+    assertTrue(listener.selects(frame), "the workspace docker image must be selected");
+    listener.onFrame(frame);
+
+    assertEquals(1, service.calls, "exactly one entry is written");
+    assertEquals("qits-workspaces", service.application);
+    assertEquals("env.QITS_WORKSPACE_IMAGE_VERSION", service.key);
+    assertEquals("2026.822.101500", service.value);
+    assertEquals("qits-configuration/software-release-listener", service.actor);
+  }
+
+  @Test
   void aDifferentImageNameWritesNothing() {
     CapturingService service = new CapturingService();
     SoftwareReleaseListener listener = listenerWith(service);
