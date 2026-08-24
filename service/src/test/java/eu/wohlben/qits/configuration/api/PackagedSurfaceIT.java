@@ -41,13 +41,13 @@ import org.junit.jupiter.api.Test;
  *       missing entry there is a 500 in the binary while the JVM suite stays green;
  *   <li><b>the client is served, and does not swallow the API.</b> Quinoa is disabled by default in
  *       test mode, so no {@code @QuarkusTest} builds or serves the SPA and every assertion about
- *       {@code /configuration/} would pass against a process with no client in it. The packaged
- *       artifact is the only place either half can be proven.
+ *       {@code /} would pass against a process with no client in it. The packaged artifact is the
+ *       only place either half can be proven.
  * </ul>
  *
  * <p><b>This is also the only place the identity contract is real.</b> A {@code @QuarkusTest} runs
  * under the {@code test} profile, where qits-auth-core ships a dev user; the launched artifact runs
- * as a deployment does, so the roles have to arrive the way qits-gateway sends them — in
+ * as a deployment does, so the roles have to arrive the way the edge sends them — in
  * {@code X-Qits-User} and {@code X-Qits-Roles}. A request with neither is asserted to be refused,
  * which is the claim that this service has no anonymous surface.
  *
@@ -66,8 +66,11 @@ public class PackagedSurfaceIT {
    * this process serves. It is also the string that has to agree with {@code
    * quarkus.quinoa.ui-root-path} here and with {@code baseHref} in qits-spa-configuration's
    * angular.json, so the probes below double as the check that all three still do.
+   *
+   * <p>It is {@code /} because this service has a host of its own — {@code
+   * configuration.<env>.<domain>} — and the client is what that host serves.
    */
-  private static final String BASE_HREF = "<base href=\"/configuration/\">";
+  private static final String BASE_HREF = "<base href=\"/\">";
 
   /**
    * Hands the launched artifact a database the way a deployment does — as the generic resource
@@ -103,7 +106,7 @@ public class PackagedSurfaceIT {
     }
   }
 
-  /** What qits-gateway asserts for an authenticated operator. */
+  /** What the edge asserts for an authenticated operator. */
   private static RequestSpecification asAdmin() {
     return given().header("X-Qits-User", "packaged-it").header("X-Qits-Roles", "qits:admin");
   }
@@ -166,8 +169,16 @@ public class PackagedSurfaceIT {
   public void theRoutesAreWhereTheGatewayRoutesThemAndAMistypedOneIsNever200() {
     asAdmin().when().get("/configuration/api/applications").then().statusCode(200);
 
-    // qits-gateway routes verbatim by prefix, so there is no unprefixed form to fall back to.
-    asAdmin().when().get("/api/applications").then().statusCode(404);
+    // The edge path-routes verbatim by prefix, so there is no unprefixed form to fall back to.
+    // /api is NOT an ignored prefix — the segment is — so the unprefixed spelling now falls to the
+    // client's catch-all and answers the page. That is the documented shape of the key: an entry
+    // protects a segment, and a path outside it is the browser's.
+    asAdmin()
+        .when()
+        .get("/api/applications")
+        .then()
+        .statusCode(200)
+        .body(Matchers.containsString(BASE_HREF));
 
     // A mistyped machine path answers Quarkus' own stock page, which is text/html and correct — so
     // what is pinned is the status and the absence of anything a client would parse as data.
@@ -177,7 +188,8 @@ public class PackagedSurfaceIT {
   }
 
   /**
-   * The client is mounted, and its {@code <base href>} agrees with where it is mounted. The two are
+   * The client is mounted at the root of this service's host, and its {@code <base href>} agrees
+   * with where it is mounted. The two are
    * configured in different repositories — {@code quarkus.quinoa.ui-root-path} here, {@code baseHref}
    * in qits-spa-configuration's angular.json — and a disagreement serves a page that loads and then
    * fetches its own JavaScript from a path that 404s. Nothing on this side notices, which is why the
@@ -187,13 +199,13 @@ public class PackagedSurfaceIT {
    * about this service's DATA: every route in {@link ConfigurationController} is {@code
    * @RolesAllowed} and the test above pins a 401 for an unauthenticated read. What is served here is
    * a static bundle with no configuration in it, and the browser that loaded it gets nothing until
-   * qits-gateway's session lets its API calls through.
+   * the edge's session lets its API calls through.
    */
   @Test
-  public void theClientIsServedAtTheSegmentWithABaseHrefThatMatches() {
+  public void theClientIsServedAtTheRootWithABaseHrefThatMatches() {
     given()
         .when()
-        .get("/configuration/")
+        .get("/")
         .then()
         .statusCode(200)
         .contentType(ContentType.HTML)
@@ -201,16 +213,17 @@ public class PackagedSurfaceIT {
   }
 
   /**
-   * A deep link is the SPA fallback doing its job: {@code /configuration/applications/qits-docs} has
-   * no file behind it, and {@code enable-spa-routing} is what makes a reload or a pasted link reach
-   * the Angular router instead of a 404. Both of the client's nested routes are probed, because an
-   * operator shares exactly these two addresses.
+   * A deep link is the SPA fallback doing its job: {@code /applications/qits-docs} has no file
+   * behind it, and {@code enable-spa-routing} is what makes a reload or a pasted link reach the
+   * Angular router instead of a 404. Both of the client's nested routes are probed, because an
+   * operator shares exactly these two addresses — and one scoped spelling, because the platform's
+   * URL grammar puts the same page under {@code /<slug>/<category>/<repo>/}.
    */
   @Test
   public void aDeepLinkFallsBackToTheClientSoTheAngularRouterOwnsIt() {
     given()
         .when()
-        .get("/configuration/applications/qits-docs")
+        .get("/applications/qits-docs")
         .then()
         .statusCode(200)
         .contentType(ContentType.HTML)
@@ -218,7 +231,15 @@ public class PackagedSurfaceIT {
 
     given()
         .when()
-        .get("/configuration/applications/qits-docs/history")
+        .get("/applications/qits-docs/history")
+        .then()
+        .statusCode(200)
+        .contentType(ContentType.HTML)
+        .body(Matchers.containsString(BASE_HREF));
+
+    given()
+        .when()
+        .get("/qits/services/qits-docs/applications/qits-docs")
         .then()
         .statusCode(200)
         .contentType(ContentType.HTML)
@@ -226,9 +247,10 @@ public class PackagedSurfaceIT {
   }
 
   /**
-   * THE HALF THAT COSTS SOMETHING IF IT IS WRONG. The SPA fallback is a late-order catch-all, so a
-   * path under {@code /configuration} that matches no route is rerouted to index.html and answers
+   * THE HALF THAT COSTS SOMETHING IF IT IS WRONG. The SPA fallback is a late-order catch-all over
+   * the WHOLE host now, so any path that matches no route is rerouted to index.html and answers
    * {@code 200 text/html} — unless {@code quarkus.quinoa.ignored-path-prefixes} claims it first.
+   * One entry, {@code /configuration}, is what keeps every machine path out of it.
    *
    * <p>The stake here is the deployer. Its per-deployment read is {@code
    * /configuration/api/applications/<app>/resolved}, and a machine path answering a PAGE would hand
@@ -240,8 +262,8 @@ public class PackagedSurfaceIT {
    * text/html}: a correct refusal wearing a browser's content type. {@link #BASE_HREF} is the
    * discriminator that means what "never HTML" was reaching for.
    *
-   * <p>Each entry in the list gets a case here. Add a literal route, add its prefix entry, add its
-   * line below — the same commit.
+   * <p>Each surface the entry covers gets a case here. Add a literal route under the segment and
+   * add its line below — the same commit.
    */
   @Test
   public void aMistypedMachinePathIs404AndNeverThePage() {
@@ -263,16 +285,29 @@ public class PackagedSurfaceIT {
   }
 
   /**
-   * A KNOWN WART, PINNED RATHER THAN FIXED. Quinoa mounts the client at {@code ui-root-path + "*"} —
-   * {@code /configuration/*} — which does not match the bare segment, so {@code /configuration}
-   * without the trailing slash is a 404 while {@code /configuration/} is the page (upstream quinoa
-   * issue #960). It affects every client on the platform identically and a redirect would be a
-   * gateway-level decision, so it is deliberately not solved per-service. This test exists so that a
-   * future Quinoa bump changing the behaviour is a failing assertion rather than a surprise.
+   * THE WART IS GONE, AND THIS IS WHAT REPLACED IT. Quinoa mounted the client at {@code
+   * ui-root-path + "*"}, which did not match the bare segment, so {@code /configuration} answered
+   * 404 while {@code /configuration/} was the page (upstream quinoa issue #960). The ui root is
+   * {@code /} now, so the client has no segment to be missing the slash of.
+   *
+   * <p>What {@code /configuration} means instead is the MACHINE segment, and both spellings of it
+   * are a 404 rather than the page — which is the whole point of the ignored prefix.
    */
   @Test
-  public void theBareSegmentWithNoTrailingSlashIsStillA404() {
-    given().when().get("/configuration").then().statusCode(404);
+  public void theBareSegmentIsTheMachineSurfaceAndNeverThePage() {
+    given()
+        .when()
+        .get("/configuration")
+        .then()
+        .statusCode(404)
+        .body(Matchers.not(Matchers.containsString(BASE_HREF)));
+
+    given()
+        .when()
+        .get("/configuration/")
+        .then()
+        .statusCode(404)
+        .body(Matchers.not(Matchers.containsString(BASE_HREF)));
   }
 
   @Test

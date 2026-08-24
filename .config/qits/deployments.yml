@@ -15,17 +15,15 @@
 # omission.
 deployment_target: environment
 
-# One route for the whole segment: the client at /configuration/, the API at /configuration/api and
-# the document at /configuration/q. qits-gateway routes verbatim by prefix, so this one line reaches
-# all three.
+# One route for the whole machine surface: the API at /configuration/api and the document at
+# /configuration/q. The edge path-routes this prefix verbatim on EVERY host, so both are reachable
+# from anywhere. The client is not here — it is what this service's own host serves at its root.
 routes: /configuration
 
-# The left-navigation entry, and the number is its position. 11 puts it at the end of the platform
-# block the operator screens already form — Githost:9, Mirror:10 — rather than among the per-project
-# doors (CI:1, Deployments:2, Artifacts:3, Projects:4, Workspaces:5). Deployments and Configuration
-# are read together often enough to argue for adjacency; they are not adjacent because renumbering
-# nine other repositories to buy it would be nine commits' worth of churn for one place in a list.
-navigation: Configuration:11
+# Where this application hangs in the sidebar: under the two kinds of repository that are deployed
+# and therefore have configuration. A library, a frontend, a CLI or an image carries none. The
+# position is per slot, and 4 keeps the same order the flat list had.
+navigation-entries: services.details.Configuration:4, daemons.details.Configuration:4
 
 # TWO STORES, DECLARED RATHER THAN CONFIGURED. This deployable now joins two jars that each own a
 # store: the configuration jar, and qits-eventstream (this service consumes the SoftwareRelease
