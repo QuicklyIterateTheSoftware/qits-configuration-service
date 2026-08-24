@@ -47,3 +47,8 @@ resources: postgresql:db, postgresql:eventstream:qits_configuration_eventstream
 # the one the deployer reads its own configuration from, and a probe that 404s here fails a
 # deployment for a reason nobody would look for in a config file.
 health_path: /configuration/q/health/ready
+
+# Where the browsable API document lives: swagger-ui under this service's non-application
+# root, which sits under the primary route above. The shell's Api Docs viewer reads it off
+# /main-navigation and frames it for this repository.
+api-docs: /configuration/q/swagger-ui
