@@ -94,23 +94,26 @@ To probe the packaged artifact as well:
                     reflection registration for what Jackson binds.
 
     service/src/main/webui/  the client — qits-spa-configuration, a git submodule. Quinoa builds it
-                             during `package` and serves it at /configuration/.
+                             during `package` and serves it at / on this service's own host.
 
 ## The client
 
 `service/src/main/webui` is the [qits-spa-configuration](https://github.com/QuicklyIterateTheSoftware/qits-spa-configuration)
-submodule, an Angular application Quinoa builds during `package` and serves at `/configuration/`:
-the applications listing, one application's entries with the editor, and its history.
+submodule, an Angular application Quinoa builds during `package` and serves at the **root** of this
+service's own host, `configuration.<env>.<domain>`: the applications listing, one application's
+entries with the editor, and its history. The same pages are addressable per repository —
+`/<projectSlug>/<category>/<repoName>/…` — which is the URL grammar every SPA on this platform
+shares.
 
-The segment is spelled twice — `quarkus.quinoa.ui-root-path` here and `baseHref` in the submodule's
-`angular.json` — and the two move together; `PackagedSurfaceIT` asserts the agreement, because a
-mismatch serves a page whose every asset 404s with nothing on this side to notice.
+The root is spelled twice — `quarkus.quinoa.ui-root-path` here and `baseHref` in the submodule's
+`angular.json`, both `/` — and the two move together; `PackagedSurfaceIT` asserts the agreement,
+because a mismatch serves a page whose every asset 404s with nothing on this side to notice.
 
-**`quarkus.quinoa.ignored-path-prefixes=/api,/q` is what keeps the client from swallowing the API.**
-The SPA fallback is a late-order catch-all, and the deployer's per-deployment read lives under
-`/api` — a machine path answered with `200 index.html` would hand a JSON parser an HTML document on
-the one service whose answer decides what a container starts with. Add a literal route under
-`/configuration` and its prefix entry in the same commit.
+**`quarkus.quinoa.ignored-path-prefixes=/configuration` is what keeps the client from swallowing the
+API.** The SPA fallback is a late-order catch-all over the whole host, and the deployer's
+per-deployment read lives under `/configuration/api` — a machine path answered with `200 index.html`
+would hand a JSON parser an HTML document on the one service whose answer decides what a container
+starts with. One entry covers the segment, because the match is by prefix.
 
 **The bundle is built before the image, never inside it.** `@qits/ui-components` lives only on the
 platform's own npm registry, which no `RUN` in a docker build can reach; `.config/qits/ci-post-receive.yml`
