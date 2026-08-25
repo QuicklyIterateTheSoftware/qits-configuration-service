@@ -50,7 +50,7 @@ class SoftwareReleaseListenerTest {
             + packageName
             + "\"}";
     return new EventFrame(
-        "evt-1", "SoftwareRelease", Instant.parse("2026-08-22T10:00:00Z"), payload, null, null);
+        "evt-1", "SoftwareRelease", Instant.parse("2026-08-22T10:00:00Z"), payload, null, null, null);
   }
 
   private SoftwareReleaseListener listenerWith(CapturingService service) {
