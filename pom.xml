@@ -64,7 +64,7 @@
              the released version into its own config store. The eventstream jar brings the outbox
              datasource, the durable-consumer tables and the catch-up sweeper; the payload is decoded
              into a local record (bus/SoftwareReleaseListener), so no qits-ci module is on the path. -->
-        <qits.eventstream.version>2026.818.45652</qits.eventstream.version>
+        <qits.eventstream.version>2026.825.74539</qits.eventstream.version>
         <qits.maven.repository.url>http://registry.dev.localhost:8080/artifacts/maven/maven</qits.maven.repository.url>
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
