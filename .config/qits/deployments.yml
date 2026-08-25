@@ -22,8 +22,9 @@ routes: /configuration
 
 # Where this application hangs in the sidebar: under the two kinds of repository that are deployed
 # and therefore have configuration. A library, a frontend, a CLI or an image carries none. The
-# position is per slot, and 4 keeps the same order the flat list had.
-navigation-entries: services.details.Configuration:4, daemons.details.Configuration:4
+# position is per slot: 6 is Configuration's place in the platform's fixed order of the
+# per-repository applications (Api Docs 1, Docs 2, Code 3, CI 4, Artifacts 5, Configuration 6, Workspaces 7).
+navigation-entries: services.details.Configuration:6, daemons.details.Configuration:6
 
 # TWO STORES, DECLARED RATHER THAN CONFIGURED. This deployable now joins two jars that each own a
 # store: the configuration jar, and qits-eventstream (this service consumes the SoftwareRelease
