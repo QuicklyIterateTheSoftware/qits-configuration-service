@@ -1,24 +1,23 @@
-# The pipeline qits-ci runs on every push to a tracked branch of this repository.
+# The image build, per push — this repository's ci-post-receive.yml MOVED HERE whole when the repo
+# went domain-event-only, the same switch qits-githost and qits-artifacts made. `checkout:` is what
+# makes it a move rather than a rewrite: the run builds the pushed branch at the pushed sha
+# (QITS_CI_BRANCH/QITS_CI_SHA are the payload's), so the steps below are the old file's, byte for
+# byte, and BuildSuccessful still announces the branch the deployer keys on. The push path used to
+# read this config from the pushed ref itself; discovering it at main instead is the point — a
+# pushed branch can no longer alter the CI that gates it.
 #
-# ONE STEP, TWO HALVES since this service grew a client, and the split between them is the whole
-# point:
-#
-#   1. build the client SPA (service/src/main/webui = the qits-spa-configuration submodule) HERE, in
-#      the step container, which sits on qits-net and can therefore reach the platform's own npm
-#      registry — where @qits/ui-components lives and where nothing else can reach it from;
-#   2. build this repo's docker/Dockerfile, whose builder stage packages that already-built bundle
-#      and never runs an install.
-#
-# THE PATTERN'S HOME IS qits-gateway AND qits-workspaces — both carry the same two halves for the
-# same reason, and their recipes are where the reasoning is maintained. This one follows them rather
-# than re-deriving it; keep them matching.
-#
-# Publish under the tag that is the whole contract with qits-platform-deployments —
-# <registry>/<repository>/<this repo's name>:<sha>. The step's own container only drives the docker
-# CLI; the build and the push happen in the host's daemon through the socket this step declares
-# (docker: true), which is also why the native build's memory is the daemon's and not this
-# container's. A failed push is a failed step is a FAILED run, so the CD announcement (SUCCESS only)
-# keeps implying "the image exists".
+# The one semantic the post-receive convention carried that `when:` restates is suppressCi: the
+# listener honoured `-o qits.no-ci` before any pipeline was read; here it is a selection like any
+# other. And this is DELIBERATELY a separate file from ci-event-userflows.yml — that run is the
+# per-commit verify + docs publish and is non-gating, so a red verify never costs the branch its
+# image. Two files, two runs per push, collapsed per branch under burst.
+event: SCMPublishCommit
+when:
+  - repoId: { exact: qits-configuration }
+    suppressCi: { exact: "false" }
+checkout:
+  branch: branch
+  sha: sha
 steps:
   # node-docker-base, the image every image-building pipeline on the platform uses: node, npm and git
   # for half one, the docker CLI for half two.
