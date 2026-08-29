@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.wohlben.qits</groupId>
         <artifactId>qits-configuration</artifactId>
-        <version>2026.825.143809</version>
+        <version>2026.829.103416</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -112,6 +112,27 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <!-- The user-story framework: TokenValidationBootstrapIT is written as @UserStory
+                 methods, so the packaged-boot proof doubles as documentation — steps, interactions
+                 and a sequence diagram emitted under target/userstories/. Both its stories are
+                 browserless (they take Interactions and no Flow), so the transitive Playwright
+                 never launches anything and no Chromium is needed to build this module. -->
+            <groupId>${project.groupId}</groupId>
+            <artifactId>qits-userflows</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- The recording service mocks. That IT points quarkus.oidc at idp.MockIdp — a
+                 MockService plus key material: it serves the JWKS for a generated keypair, mints
+                 tokens signed by it (and, on demand, by a key it never published), and records what
+                 it answered, which is the far end of the story's interactions. Nothing else in this
+                 repo can stand in for it: with the tenant gated off in every @QuarkusTest, the
+                 shipped auth-server-url + jwks-path pair is fetched nowhere. -->
+            <groupId>${project.groupId}</groupId>
+            <artifactId>qits-service-mock</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>io.rest-assured</groupId>
             <artifactId>rest-assured</artifactId>
             <scope>test</scope>
@@ -132,6 +153,18 @@
         <dependency>
             <groupId>io.zonky.test.postgres</groupId>
             <artifactId>embedded-postgres-binaries-linux-arm64v8</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- The fourth arch, and it is CI's. .config/qits/ci-event-userflows.yml runs
+                 `mvn verify` in maven-base as `user: build`, and those step containers are Alpine
+                 (musl): zonky picks the -alpine binaries there at run time, and
+                 TokenValidationBootstrapIT's own embedded postgres is spawned by this module's
+                 failsafe JVM. `user: build` is the same family of reason — initdb refuses to run as
+                 root and calls getpwuid, so the step needs a passwd-backed non-root user.
+                 qits-eventstream's pom carries the same fourth arch for the same pipeline. -->
+            <groupId>io.zonky.test.postgres</groupId>
+            <artifactId>embedded-postgres-binaries-linux-amd64-alpine</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
