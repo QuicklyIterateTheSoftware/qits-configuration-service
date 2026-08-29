@@ -1,5 +1,5 @@
 # The per-commit userflow run: `mvn verify` at the pushed commit — which regenerates
-# service/target/userstories/ through TokenValidationBootstrapIT — and the reports published as one
+# service/target/userstories/ through the story ITs named below — and the reports published as one
 # docs bundle, site @userflows/qits-configuration, version = the bare commit sha, branch riding as
 # artifacts metadata for discovery.
 #
@@ -27,8 +27,19 @@
 # PackagedSurfaceIT is the module's other integration test, and while it needs no docker, half of it
 # is about the CLIENT — the base href, the deep links, the fallback that must not swallow a machine
 # path — which the line above deliberately does not build. Flipping the property would make this
-# quinoa-less run red on a test that is right. Naming the class keeps the opt-in to this pipeline
-# and to this story: `-DskipITs=false "-Dit.test=TokenValidationBootstrapIT"`.
+# quinoa-less run red on a test that is right, and `-Dit.test=*IT` would pull it back in. Naming the
+# classes keeps the opt-in to this pipeline and to these stories.
+#
+# THE LIST IS NOT DERIVED AND HAS TO BE MAINTAINED. `-Dit.test` takes commas, and a story class that
+# is not on it is written and never run. Every class shares ONE @TestProfile
+# (TokenValidationBootstrapIT.PackagedWithMockIdp), so the whole list is one launched process, one
+# embedded postgres and one stub event log rather than one per class. The order below is the order
+# they run in anyway (failsafe orders by FQCN within a profile group) and it is load-bearing: the
+# boot IT owns the startup JWKS traffic. See AGENTS.md § Userflows.
+#
+# `-Dtest=SKIPNONE -Dsurefire.failIfNoSpecifiedTests=false` keeps the unit suites out of this run:
+# they are ci-post-receive.yml's business, this pipeline is about the stories, and running them
+# twice per push buys nothing.
 #
 # Loop review: this pipeline PUTs a docs bundle and pushes no commit — no cycle. Publish-if-absent:
 # events redeliver and docs versions are immutable, so 409 is success (the qits-spa-ui-components
@@ -53,7 +64,9 @@ steps:
       ./mvnw -B -ntp -s .qits-maven-settings.xml verify \
         -Dqits.maven.repository.url="$QITS_MAVEN_REPOSITORY_URL" \
         -Dquarkus.quinoa=false \
-        -DskipITs=false "-Dit.test=TokenValidationBootstrapIT"
+        -Dtest=SKIPNONE -Dsurefire.failIfNoSpecifiedTests=false \
+        -DskipITs=false \
+        "-Dit.test=TokenValidationBootstrapIT,ConfigurationImportIT,DeploymentConfigurationIT,OperatorEditIT,AccessRefusalIT,ImageReleasePinIT"
 
       # `-C … .` so the story directories are the bundle's roots — nesting one directory deep would
       # put it in every served URL.
