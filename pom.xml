@@ -37,7 +37,7 @@
          is meant to be edited by hand. Deliberately NOT a -SNAPSHOT: the image build resolves this
          reactor from source, so a snapshot coordinate would only invite a resolver to look for one
          in a repository that will never hold it. -->
-    <version>2026.829.135707</version>
+    <version>2026.829.223808</version>
     <packaging>pom</packaging>
     <name>qits-configuration</name>
 
@@ -59,15 +59,18 @@
         <qits.db-core.version>2026.817.175344</qits.db-core.version>
         <qits.auth-core.version>2026.817.175344</qits.auth-core.version>
         <qits.arch-rules.version>2026.817.175344</qits.arch-rules.version>
-        <!-- The user-story framework (test scope everywhere): TokenValidationBootstrapIT is written
-             as @UserStory methods, so the packaged-boot proof also regenerates
-             service/target/userstories/ — the story's own documentation, sequence diagram
-             included. Nothing in src/main knows it exists. -->
-        <qits.userflows.version>2026.828.153026</qits.userflows.version>
-        <!-- The recording service mocks that IT boots against (the generic MockService plus
+        <!-- The user-story framework (test scope everywhere): service/src/test/.../stories/ and
+             api/TokenValidationBootstrapIT are written as @UserStory methods, so a `verify` with
+             the ITs opted in also regenerates service/target/userstories/ — the catalogue's own
+             documentation, network diagram included, OBSERVED rather than narrated. This version is
+             the one that SHIPS the RestAssured tap (NetworkTaps.restAssured), which is why the
+             hand-copied StoryNetworkFilter is gone from this repository. Nothing in src/main knows
+             any of it exists. -->
+        <qits.userflows.version>2026.829.201516</qits.userflows.version>
+        <!-- The recording service mocks the story ITs boot against (the generic MockService plus
              idp.MockIdp), released out of libs/qits-integrations-quarkus like the three jars above
              — the same-string policy applies the day this repo consumes a newer reactor of it. -->
-        <qits.service-mock.version>2026.827.71232</qits.service-mock.version>
+        <qits.service-mock.version>2026.829.201505</qits.service-mock.version>
         <!-- The platform event bus client (qits-eventstream). This service SUBSCRIBES: it consumes
              qits-ci's `SoftwareRelease` off the durable bus and, for the project-agent image, writes
              the released version into its own config store. The eventstream jar brings the outbox

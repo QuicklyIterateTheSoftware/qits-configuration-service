@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.wohlben.qits</groupId>
         <artifactId>qits-configuration</artifactId>
-        <version>2026.829.135707</version>
+        <version>2026.829.223808</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -112,11 +112,13 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <!-- The user-story framework: TokenValidationBootstrapIT is written as @UserStory
-                 methods, so the packaged-boot proof doubles as documentation — steps, interactions
-                 and a sequence diagram emitted under target/userstories/. Both its stories are
-                 browserless (they take Interactions and no Flow), so the transitive Playwright
-                 never launches anything and no Chromium is needed to build this module. -->
+            <!-- The user-story framework: src/test/.../stories/ and api/TokenValidationBootstrapIT
+                 are written as @UserStory methods, so the packaged-artifact proofs double as
+                 documentation — steps, notes and an observed network diagram emitted under
+                 target/userstories/. Every story here is browserless (an Interactions parameter,
+                 sometimes a Network one, and no Flow), so the transitive Playwright never launches
+                 anything and no Chromium is needed to build this module. It also ships the
+                 RestAssured tap every story class installs; there is no local copy of it here. -->
             <groupId>${project.groupId}</groupId>
             <artifactId>qits-userflows</artifactId>
             <scope>test</scope>

@@ -184,9 +184,11 @@ pom, because Quinoa is in no BOM and its version does not track the platform's.
 - **A `@QuarkusTest` runs under the `test` profile, where qits-auth-core ships a dev user** carrying
   `qits:admin` and `qits:system` — so the shipped `@RolesAllowed` pair is exercised rather than
   bypassed, with no `@TestSecurity` fabricating an identity that no deployment ever produces.
-- **`PackagedSurfaceIT` is the only test that runs against the artifact**, and the only place the
-  identity contract is real: the launched process runs as a deployment does, so its requests carry
-  `X-Qits-User` / `X-Qits-Roles`, and one test asserts that a request with neither is refused. It
+- **The identity contract is real only against the artifact**, which is what `PackagedSurfaceIT` and
+  every class under `stories/` run against: the launched process runs as a deployment does, so its
+  requests carry `X-Qits-User` / `X-Qits-Roles` or a bearer, and a request with neither is refused.
+  `PackagedSurfaceIT` is the SPA and datasource half of that (and the only one `-Dnative` runs); the
+  story catalogue is the behaviour half — see § Userflows. `PackagedSurfaceIT`
   also hands the process `QITS_RESOURCE_DB_*` rather than restating the datasource keys, so the
   jar's own `${…}` indirection is under test, and it reads the written row back over JDBC to prove
   which database the process really opened. Its embedded postgres reaches the profile through a
@@ -201,9 +203,10 @@ Each of these is a decision, not an omission, and each has a place it would land
 
 - **Secret entries.** The `class` column exists for them and holds `plain` only. A secret is an
   in-memory, approval-gated, one-shot credential — never a value in this table.
-- **Change events.** No `qits-eventstream` dependency, no publish, no subscribe. The deployer pulls
-  per deployment, so nothing depends on a push. A publisher would arrive with the vocabulary jar
-  every other announcing service has.
+- **Change events.** This service SUBSCRIBES (`bus/SoftwareReleaseListener` consumes qits-ci's
+  `SoftwareRelease` off the durable bus) and publishes nothing: no `ConfigurationChanged`, no
+  announcement of a write. The deployer pulls per deployment, so nothing depends on a push. A
+  publisher would arrive with the vocabulary jar every other announcing service has.
 - **OpenTelemetry export.** The siblings ship `quarkus-opentelemetry` with the four preview keys
   spelled out. This service does not yet; adding it is the extension plus that block, copied from
   qits-events' `application.properties` where the reasoning for each line lives.
@@ -211,7 +214,7 @@ Each of these is a decision, not an omission, and each has a place it would land
   no export test writing it into the repo. Add one the day the surface has an outside consumer whose
   diffs are worth reviewing.
 
-## The second IT: the packaged one with the tenant on, and the userflow
+## The packaged IT with the tenant on — the profile the whole catalogue runs behind
 
 `api/TokenValidationBootstrapIT` boots the **packaged** fast-jar with the **machine-auth gate on** —
 `qits.auth.machine.required=true`, which is what `quarkus.oidc.tenant-enabled` is spelled in terms of
@@ -224,11 +227,16 @@ enforcement, the `groups` claim becoming roles — is exercised nowhere else. Th
 deployer: its per-deployment `resolved` read is a bearer's read, so this is the precondition of
 every deployment on the platform.
 
-Four things about it are easy to undo:
+Five things about it are easy to undo:
 
 - **Its profile EXTENDS `PackagedSurfaceIT.PackagedUnderTarget`** rather than copying it — what a
-  launched qits-configuration needs in order to boot is one answer — and adds only the gate, the mock
-  idp's address, the bus's darkness and the eventstream resource triple.
+  launched qits-configuration needs in order to boot is one answer — and adds the gate, the mock
+  idp's address, the eventstream resource triple, and the bus pointed at a stub.
+- **`PackagedWithMockIdp` is the ONE profile every story class shares**, which is what makes the
+  whole catalogue one launched process and one embedded postgres instead of one per class. Every
+  shared seam belongs in it; a second profile is a second boot, and — because `MockIdp` and the
+  event-log stub are parked in system properties per JVM — a second startup JWKS fetch draining into
+  whichever story happens to be open.
 - **That triple is a gap in the parent, not a decision of the child.** The qits-eventstream jar ships
   `${QITS_RESOURCE_EVENTSTREAM_URL}` with no default (the refuse-to-boot stance), and
   `PackagedSurfaceIT` predates the jar and still hands the launched process the `QITS_RESOURCE_DB_*`
@@ -238,20 +246,126 @@ Four things about it are easy to undo:
   environment (they are spelled as the deployer spells them, so the shipped `${…}` expressions stay
   under test). A packaged process cannot be handed a build-time key; it would silently take the
   default.
-- **It is opted in by NAME, not by `skipITs`.** The root pom keeps `skipITs=true`, because failsafe
-  has one run per module and half of `PackagedSurfaceIT` is about the SPA, which the userflow
-  pipeline deliberately does not build (`-Dquarkus.quinoa=false`). Run it — and
-  `.config/qits/ci-event-userflows.yml` runs it — as
-  `./mvnw verify -DskipITs=false -Dit.test=TokenValidationBootstrapIT`.
+- **The story classes are opted in by NAME, not by `skipITs`.** The root pom keeps `skipITs=true`,
+  because failsafe has one run per module and half of `PackagedSurfaceIT` is about the SPA, which the
+  userflow pipeline deliberately does not build (`-Dquarkus.quinoa=false`). The list is spelled in
+  `.config/qits/ci-event-userflows.yml` and repeated under § Userflows below; **a new story class has
+  to be added to it**, or it is written and never run.
 
-It is also this repo's first **userflow**: the two stories are `@UserStory` methods in category
-`authentication`, so a `verify` also writes `service/target/userstories/` — the proof as
-documentation, with the idp interactions drawn as a sequence diagram. They are **browserless** (an
-`Interactions` parameter and no `Flow`), so the framework's transitive Playwright never launches
-anything. The class orderer is installed the one way Quarkus permits — the
-`junit.quarkus.orderer.secondary-orderer` line in `service`'s test properties; a local
-`junit-platform.properties` hard-fails surefire.
+## Userflows
+
+`service/src/test/java/eu/wohlben/qits/configuration/stories/` is this repository's **user-story
+catalogue**, and `api/TokenValidationBootstrapIT` is the boot story it runs behind. Each `@UserStory`
+method is a browserless walk (an `Interactions` parameter, sometimes a `Network` one, and no `Flow`,
+so the transitive Playwright launches nothing) that emits
+`service/target/userstories/<category>/<story>/` — a `userflow.json` sidecar, a markdown rendering
+and a self-contained HTML page carrying the story's **network diagram**. The framework is
+`qits-userflows`, test scope, pinned on its own `qits.userflows.version` because it is released out
+of `libs/qits-userflows` and not out of the integrations reactor.
+
+**Every story is a `@QuarkusIntegrationTest` against the packaged artifact, and that is not a
+preference.** Inside a `@QuarkusTest` qits-auth-core's `%test` dev user holds all four platform roles
+and the OIDC tenant is off, so *every door in this service is open to a plain `given()`* — a refusal
+cannot be observed at all. A launched artifact runs in `NORMAL` mode with the tenant on and no dev
+user, which is the first moment "no credential", "the wrong role" and `qits:system` mean anything.
+That is why `stories/refusals/` exists and why it cannot move into the surefire suite.
+
+**Class order is FQCN-alphabetical within the profile group, and the package names are chosen so
+alphabetical IS the intended order**: `api` (the boot) → `bootstrap` → `deployment` → `operator` →
+`refusals` → `release`, which is also the order the platform meets them in — the configuration is
+imported, the deployer reads it, an operator changes it, the doors are shown to be shut, and a
+release writes into it without anybody typing. Every story also declares `@UserflowRunsAfter`, so a
+later package rename cannot silently reshuffle the diagrams. The order is load-bearing rather than
+tidy: a cumulative capture source is attributed by a cursor, so traffic recorded before any story ran
+— the startup JWKS fetch — lands in whichever story drains *first*, and that must be the story about
+it. Every class is nonetheless runnable on its own (`-Dit.test=ImageReleasePinIT`), because the
+fixture and the far-side floor are per-JVM idempotent rather than per-order.
+
+**The diagram is observed, never narrated.** `Interactions` records notes; nothing draws an edge by
+hand except the one declared store. Three taps feed `NetworkCapture` and there is no fourth:
+
+| tap | what it draws | where it lives |
+| --- | --- | --- |
+| `NetworkTaps.restAssured("qits-configuration")` | `<actor> -> qits-configuration`, one edge per request a story makes, labelled `METHOD <scrubbed path> -> <status>` | the framework ships it; installed from each story class's `@BeforeAll`, idempotent per service |
+| `MockIdp.recordedRequests()` | `qits-configuration -> qits-platform-idp` — the startup JWKS fetch | registered as a cumulative `NetworkCapture.source` in `api/TokenValidationBootstrapIT` |
+| the event-log stub's access log | `qits-configuration -> qits-events` — the catch-up poll that carried a release | `stories/support/StoryEventBus` |
+
+The local `StoryNetworkFilter` this repo carried beside the IT is **deleted**: the framework ships
+that tap now (`qits-userflows` 2026.829.201516), and a per-repo copy is exactly the thing that goes
+out of step. Its default skip is any path with a `/q/` segment, which is right here —
+`quarkus.http.non-application-root-path` is `/configuration/q`, so the readiness probe is out of
+every diagram and no route this service owns is.
+
+**The bus is LIT in the story profile, and that is the finding worth carrying.** Every other suite in
+this repository darkens `qits.eventstream.enabled`, and a launched artifact would have dialled the
+real `qits-events` alias — so the one path by which a value enters this store without a person typing
+it was exercised nowhere. `stories/support/StoryEventBus` is a small recording HTTP server that
+answers the log's list route: it is started from the profile (the launched process needs
+`qits.events.url` before it boots), **armed by a file** (a test profile is instantiated in more than
+one classloader, so the story that arms the log does not hold the object that serves it), and it
+records `METHOD URI STATUS carried|empty` per answered request. `qits.eventstream.catchup-interval` is
+shortened to `PT2S`, so a release arrives on a tick rather than on a push — the stub cannot upgrade a
+websocket, and the durable consumer does not need it to.
+
+**Two things are excluded from that recording, and neither is silent.** An **empty poll** is not an
+edge: the catch-up sweep is a timer that fires whether or not a story is running, so drawing it would
+put a heartbeat in whichever story happened to be open and the `networkHash` would move with nothing
+having changed. The **websocket redial** (`/events/stream`, answered 404) is out for the same reason.
+What is kept is the poll that *carried* the release, which is a dependency a story exercised and can
+point at. Skipping happens at harvest and a skipped line never enters the list, so the framework's
+per-source cursor still slices a prefix-stable sequence.
+
+**Fixture setup must be invisible to the tap.** `stories/support/StoryPlatform` configures the one
+shared application with a plain `java.net.http.HttpClient` — the RestAssured tap is JVM-global once
+installed, so a fixture built through `given()` would draw arrows nobody walked. It goes in
+`@BeforeEach`, not `@BeforeAll`: `RestAssured.port` is set by the Quarkus integration-test extension's
+*beforeEach* callback and cleared back to `-1` in afterEach, so a `@BeforeAll` that builds a url from
+it produces `http://localhost:-1`. Both it and `StoryEventBus.install()` are idempotent per JVM, and
+the order (**provision first, floor second**) is what keeps fixture traffic below the line.
+
+**Application names in stories are stable literals, never run stamps.** A name is a whole path
+segment and `Labels` rewrites only segments it can tell were generated — a uuid, a long hex run, a
+bare number — so `story-import-alpha` would survive into the label exactly as written and a stamped
+name would move every `networkHash` on every run. Each class owns its own names, and the embedded
+postgres is new per run, so literals cost nothing.
+
+**What the stories claim, and where the negatives are.** A presence check cannot say "and nothing
+else happened", which is most of what is worth knowing about a store:
+
+| category | story | the claim only a negative can make |
+| --- | --- | --- |
+| `authentication` | the startup JWKS fetch; a stranger's token refused | — |
+| `bootstrap` | the config volume's file imported whole; re-importing writes nothing; one bad line refuses the whole file | `assertEdgeCount` + one initiator — writing the platform's configuration consults nobody |
+| `deployment` | the deployer's resolved read; an unconfigured application still deploys | `assertEdgeCount(2)` on the read — one request in, one **declared** jdbc store behind it, and `assertNoEdgesTo(qits-platform-idp)`: a bearer is judged on keys fetched at startup, so the idp is not on the critical path of every deployment |
+| `operator` | a value set and re-saved; an entry removed; a key outside the grammar refused | `assertOnlyEdgesFrom(<one person>)` — an edit is rows in this service's own store and is pushed nowhere |
+| `authorization` | anonymous; a signed-in reader; both identity tracks at one door | `assertNoEdgesFrom(qits-configuration)` — a refusal is decided at the door, so no store is read on behalf of a caller about to be refused |
+| `release` | a released image becomes what the next container starts with | `assertEdgeCount(4)` however many times the story polled, and the one **outgoing** arrow in the catalogue that is not the idp |
+
+The declared jdbc edge is the honest answer to "what does this service call out to": its own
+postgres, and nothing else, while it serves the read every deployment on the platform waits for.
+`Network.declare` is the framework's escape hatch for a dependency no tap can see, marked
+`"declared": true` in the sidecar and drawn muted and dashed, so a claim never renders like evidence.
+
+**What is out of reach here.** The live half of the bus — a frame pushed over `/events/stream` — is
+not covered: the stub is a `com.sun` `HttpServer` and cannot upgrade a websocket, so every delivery
+in these stories is the catch-up sweep's. That is the *durable* path and the one that survives a
+restart, so it is the more load-bearing of the two; the live path is qits-eventstream's own suite's
+business. Nothing here exercises the native binary either — `-Dnative` runs `PackagedSurfaceIT`, and
+the story classes would work under it unchanged.
+
+**Running them:**
+
+    ./mvnw -pl service -am -DskipITs=false -Dquarkus.quinoa=false verify \
+      -Dtest=SKIPNONE -Dsurefire.failIfNoSpecifiedTests=false \
+      -Dit.test=TokenValidationBootstrapIT,ConfigurationImportIT,DeploymentConfigurationIT,OperatorEditIT,AccessRefusalIT,ImageReleasePinIT
+
+`-Dit.test` takes commas; `-Dtest=SKIPNONE` keeps the unit suite out of an IT-only run (run it
+separately before committing). `skipITs` stays `true` in the root pom because `PackagedSurfaceIT` is
+half about the SPA, so the opt-in is per-run and per-class. The class orderer is installed the one way
+Quarkus permits — the `junit.quarkus.orderer.secondary-orderer` line in `service`'s test properties; a
+local `junit-platform.properties` hard-fails surefire.
 
 `.config/qits/ci-event-userflows.yml` publishes the reports per commit as the docs bundle
 `@userflows/qits-configuration`, and is **non-gating by design**: it is a separate file from
-`ci-post-receive.yml` so a red story does not cost the branch its image.
+`ci-post-receive.yml` so a red story does not cost the branch its image. It runs exactly the list
+above.
