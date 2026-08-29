@@ -210,3 +210,48 @@ Each of these is a decision, not an omission, and each has a place it would land
 - **A committed `docs/openapi.yml`.** The document is served at `/configuration/q/openapi`; there is
   no export test writing it into the repo. Add one the day the surface has an outside consumer whose
   diffs are worth reviewing.
+
+## The second IT: the packaged one with the tenant on, and the userflow
+
+`api/TokenValidationBootstrapIT` boots the **packaged** fast-jar with the **machine-auth gate on** —
+`qits.auth.machine.required=true`, which is what `quarkus.oidc.tenant-enabled` is spelled in terms of
+— against `eu.wohlben.qits.servicemock.idp.MockIdp`, a recording stand-in for qits-platform-idp that
+serves a real JWKS for a generated keypair and mints RS256 bearers signed by it. That is the one
+posture no other test here reaches: every `@QuarkusTest` leaves the gate shut (a clone-alone
+`./mvnw verify` must need no issuer), so the block this service deploys with — `auth-server-url`
+plus `jwks-path=jwks` fetched over a real listener at startup, `quarkus.oidc.token.audience`
+enforcement, the `groups` claim becoming roles — is exercised nowhere else. The stake is the
+deployer: its per-deployment `resolved` read is a bearer's read, so this is the precondition of
+every deployment on the platform.
+
+Four things about it are easy to undo:
+
+- **Its profile EXTENDS `PackagedSurfaceIT.PackagedUnderTarget`** rather than copying it — what a
+  launched qits-configuration needs in order to boot is one answer — and adds only the gate, the mock
+  idp's address, the bus's darkness and the eventstream resource triple.
+- **That triple is a gap in the parent, not a decision of the child.** The qits-eventstream jar ships
+  `${QITS_RESOURCE_EVENTSTREAM_URL}` with no default (the refuse-to-boot stance), and
+  `PackagedSurfaceIT` predates the jar and still hands the launched process the `QITS_RESOURCE_DB_*`
+  triple alone — so `-DskipITs=false` on that test alone dies at Flyway naming the missing variable.
+  Move the three lines up into `PackagedUnderTarget` when that is fixed.
+- **Every override the profile sets is a RUNTIME key**, including the ones that look like
+  environment (they are spelled as the deployer spells them, so the shipped `${…}` expressions stay
+  under test). A packaged process cannot be handed a build-time key; it would silently take the
+  default.
+- **It is opted in by NAME, not by `skipITs`.** The root pom keeps `skipITs=true`, because failsafe
+  has one run per module and half of `PackagedSurfaceIT` is about the SPA, which the userflow
+  pipeline deliberately does not build (`-Dquarkus.quinoa=false`). Run it — and
+  `.config/qits/ci-event-userflows.yml` runs it — as
+  `./mvnw verify -DskipITs=false -Dit.test=TokenValidationBootstrapIT`.
+
+It is also this repo's first **userflow**: the two stories are `@UserStory` methods in category
+`authentication`, so a `verify` also writes `service/target/userstories/` — the proof as
+documentation, with the idp interactions drawn as a sequence diagram. They are **browserless** (an
+`Interactions` parameter and no `Flow`), so the framework's transitive Playwright never launches
+anything. The class orderer is installed the one way Quarkus permits — the
+`junit.quarkus.orderer.secondary-orderer` line in `service`'s test properties; a local
+`junit-platform.properties` hard-fails surefire.
+
+`.config/qits/ci-event-userflows.yml` publishes the reports per commit as the docs bundle
+`@userflows/qits-configuration`, and is **non-gating by design**: it is a separate file from
+`ci-post-receive.yml` so a red story does not cost the branch its image.

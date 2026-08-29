@@ -59,6 +59,15 @@
         <qits.db-core.version>2026.817.175344</qits.db-core.version>
         <qits.auth-core.version>2026.817.175344</qits.auth-core.version>
         <qits.arch-rules.version>2026.817.175344</qits.arch-rules.version>
+        <!-- The user-story framework (test scope everywhere): TokenValidationBootstrapIT is written
+             as @UserStory methods, so the packaged-boot proof also regenerates
+             service/target/userstories/ — the story's own documentation, sequence diagram
+             included. Nothing in src/main knows it exists. -->
+        <qits.userflows.version>2026.828.153026</qits.userflows.version>
+        <!-- The recording service mocks that IT boots against (the generic MockService plus
+             idp.MockIdp), released out of libs/qits-integrations-quarkus like the three jars above
+             — the same-string policy applies the day this repo consumes a newer reactor of it. -->
+        <qits.service-mock.version>2026.827.71232</qits.service-mock.version>
         <!-- The platform event bus client (qits-eventstream). This service SUBSCRIBES: it consumes
              qits-ci's `SoftwareRelease` off the durable bus and, for the project-agent image, writes
              the released version into its own config store. The eventstream jar brings the outbox
@@ -108,7 +117,17 @@
         <!-- PackagedSurfaceIT runs against the BUILT artifact, so it needs a `package` to have
              happened. `-DskipITs=false` (or `-Dnative`, which flips this in service/pom.xml's
              profile) is how you ask for the artifact to be probed; a plain `./mvnw verify` on a
-             fresh clone stays green without it. -->
+             fresh clone stays green without it.
+
+             AND IT STAYS true NOW THAT TokenValidationBootstrapIT EXISTS, unlike qits-githost,
+             which opts its service module back in. Failsafe has one run per module, so flipping
+             this would drag PackagedSurfaceIT into every `mvn verify` — and half of that test is
+             about the SPA, which the userflow pipeline deliberately does not build
+             (`-Dquarkus.quinoa=false`). A quinoa-less run would then go red on a test that is
+             right. The userflow run opts itself in by NAME instead:
+             .config/qits/ci-event-userflows.yml passes
+             `-DskipITs=false "-Dit.test=TokenValidationBootstrapIT"`, which is also the incantation
+             to run the story by hand. -->
         <skipITs>true</skipITs>
         <!-- Surefire's @{argLine} has no value unless something (jacoco/quarkus) sets it. -->
         <argLine/>
@@ -181,6 +200,19 @@
                 <groupId>${project.groupId}</groupId>
                 <artifactId>qits-arch-rules</artifactId>
                 <version>${qits.arch-rules.version}</version>
+            </dependency>
+            <dependency>
+                <!-- Test scope at every declaration site, like qits-arch-rules: the stories run in
+                     the build and ship in nothing. -->
+                <groupId>${project.groupId}</groupId>
+                <artifactId>qits-userflows</artifactId>
+                <version>${qits.userflows.version}</version>
+            </dependency>
+            <dependency>
+                <!-- Test scope at every declaration site, like qits-arch-rules. -->
+                <groupId>${project.groupId}</groupId>
+                <artifactId>qits-service-mock</artifactId>
+                <version>${qits.service-mock.version}</version>
             </dependency>
             <dependency>
                 <!-- Managed here rather than versioned at the use site because Quinoa is in no BOM;
