@@ -8,7 +8,11 @@
 # ci-event-userflows.yml on purpose: that run is non-gating, a red verify must not cost the image.
 event: SCMPublishCommit
 when:
-  - repoId: { exact: qits-configuration }
+  # repoName, not repoId: the git host's own coordinate can be an opaque UUID since the
+  # identity cutover, so a name match on repoId is not dependable. The push event echoes the
+  # public name the push was addressed with, which always is; a rename updates this line in
+  # the same campaign.
+  - repoName: { exact: qits-configuration-service }
     suppressCi: { exact: "false" }
 checkout:
   branch: branch
@@ -25,14 +29,14 @@ steps:
       set -eu
 
       # --- half one: the client -------------------------------------------------------------------
-      # The daemon's clone is shallow and does not recurse, so the qits-spa-configuration submodule at
+      # The daemon's clone is shallow and does not recurse, so the qits-configuration-frontend submodule at
       # service/src/main/webui arrives as an empty directory — and the Dockerfile's `test -f` guard
       # stops the image build on exactly that (Quinoa's own `No package.json found in Web UI
       # directory` would stop it a moment later). Initialising it here rather than asking the daemon
       # to clone differently keeps the submodule this repo's business, and the derived URL is what
       # makes the committed relative one resolve against whichever host this run cloned from.
-      frontend_url="${QITS_CI_REPOSITORY_URL%/*}/qits-spa-configuration"
-      git -c submodule.qits-spa-configuration.url="$frontend_url" submodule update --init service/src/main/webui
+      frontend_url="${QITS_CI_REPOSITORY_URL%/*}/qits-configuration-frontend"
+      git -c submodule.qits-configuration-frontend.url="$frontend_url" submodule update --init service/src/main/webui
 
       # THE LOCKFILE is the one file this step edits, and npm leaves no alternative. npm pins a full
       # resolved URL per package, and the SPA's lockfile is generated on the deployment host, so every
@@ -65,7 +69,7 @@ steps:
         -e "s#(\"resolved\": \")https?://[^/\"]+($npm_hosted_path)#\1$npm_hosted_origin\2#" \
         package-lock.json
 
-      # ENVIRONMENT, not a file. qits-spa-configuration COMMITS an .npmrc (the edge vhosts, right for
+      # ENVIRONMENT, not a file. qits-configuration-frontend COMMITS an .npmrc (the edge vhosts, right for
       # a developer on the deployment host), and npm ranks a project .npmrc ABOVE ~/.npmrc — so a
       # `cat > ~/.npmrc` preamble would be written and silently ignored. `npm_config_*` environment
       # outranks both files, so it wins without touching the submodule's tree.
@@ -74,7 +78,7 @@ steps:
           npm ci --no-audit --no-fund
 
       # dist/qits-spa-configuration/browser — the bundle the image build consumes, and the ONE
-      # artifact this half exists to produce. Lint and test are qits-spa-configuration's own
+      # artifact this half exists to produce. Lint and test are qits-configuration-frontend's own
       # pipeline's job; repeating them here would only make this repo red for someone else's commit.
       npm run build
       cd -

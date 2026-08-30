@@ -15,6 +15,16 @@
 # omission.
 deployment_target: environment
 
+# WHAT THIS REPOSITORY DEPLOYS AS, held still across the repository rename. The repository is
+# qits-configuration-service now; the application is still qits-configuration, so nothing that is
+# running moves: the swarm service and its wire alias, the container, the image
+# qits/qits-configuration the build pushes, the provisioned database, the derived host label, the
+# extras family and the QITS_APPLICATION the container boots with all keep the names they have.
+# Omitted, this name would be DERIVED from the repository, and the rename would read as a
+# decommission plus a new application rather than a rename. Changing the value later is exactly that
+# decommission, so it does not change again.
+application: qits-configuration
+
 # One route for the whole machine surface: the API at /configuration/api and the document at
 # /configuration/q. The edge path-routes this prefix verbatim on EVERY host, so both are reachable
 # from anywhere. The client is not here — it is what this service's own host serves at its root.

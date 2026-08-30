@@ -16,7 +16,7 @@
 #
 # Quinoa is off (`-Dquarkus.quinoa=false` — the extension's root toggle; `.enabled` is silently
 # ignored and npm still runs): the client is ci-post-receive.yml's business, where the
-# qits-spa-configuration submodule is initialised and its lockfile origins are swapped, and none of
+# qits-configuration-frontend submodule is initialised and its lockfile origins are swapped, and none of
 # that ritual belongs here — the story asserts nothing about the SPA. It is also what keeps this
 # step from needing the submodule at all: the daemon's clone does not recurse, so
 # service/src/main/webui arrives empty and Quinoa would fail the build on exactly that. The packaged
@@ -46,7 +46,11 @@
 # release file's discipline).
 event: SCMPublishCommit
 when:
-  - repoId: { exact: qits-configuration }
+  # repoName, not repoId: the git host's own coordinate can be an opaque UUID since the
+  # identity cutover, so a name match on repoId is not dependable. The push event echoes the
+  # public name the push was addressed with, which always is; a rename updates this line in
+  # the same campaign.
+  - repoName: { exact: qits-configuration-service }
     suppressCi: { exact: "false" }
 checkout:
   branch: branch
