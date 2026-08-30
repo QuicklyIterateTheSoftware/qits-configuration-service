@@ -1,4 +1,4 @@
-# qits-configuration — working notes
+# qits-configuration-service — working notes
 
 Read `README.md` first: it defines the model and lists the routes. This file is the working
 conventions on top of it.
@@ -142,8 +142,8 @@ then cannot find — a packaged process that answers the API correctly and the S
 
 ## The client
 
-`service/src/main/webui` is the `qits-spa-configuration` submodule (relative url, `ignore = all`,
-`update = merge`, `branch = main` — the sibling shape). Quinoa 2.8.2 is pinned by hand in the root
+`service/src/main/webui` is the `qits-configuration-frontend` submodule (relative url,
+`ignore = all`, `update = merge`, `branch = main` — the sibling shape). Quinoa 2.8.2 is pinned by hand in the root
 pom, because Quinoa is in no BOM and its version does not track the platform's.
 
 - **The segment is spelled twice**, `quarkus.quinoa.ui-root-path` here and `baseHref` in the
@@ -261,7 +261,7 @@ so the transitive Playwright launches nothing) that emits
 `service/target/userstories/<category>/<story>/` — a `userflow.json` sidecar, a markdown rendering
 and a self-contained HTML page carrying the story's **network diagram**. The framework is
 `qits-userflows`, test scope, pinned on its own `qits.userflows.version` because it is released out
-of `libs/qits-userflows` and not out of the integrations reactor.
+of `components/qits-userflows/qits-userflows-javalib` and not out of the integrations reactor.
 
 **Every story is a `@QuarkusIntegrationTest` against the packaged artifact, and that is not a
 preference.** Inside a `@QuarkusTest` qits-auth-core's `%test` dev user holds all four platform roles
@@ -349,8 +349,8 @@ postgres, and nothing else, while it serves the read every deployment on the pla
 **What is out of reach here.** The live half of the bus — a frame pushed over `/events/stream` — is
 not covered: the stub is a `com.sun` `HttpServer` and cannot upgrade a websocket, so every delivery
 in these stories is the catch-up sweep's. That is the *durable* path and the one that survives a
-restart, so it is the more load-bearing of the two; the live path is qits-eventstream's own suite's
-business. Nothing here exercises the native binary either — `-Dnative` runs `PackagedSurfaceIT`, and
+restart, so it is the more load-bearing of the two; the live path is qits-eventstream-javalib's own
+suite's business. Nothing here exercises the native binary either — `-Dnative` runs `PackagedSurfaceIT`, and
 the story classes would work under it unchanged.
 
 **Running them:**
