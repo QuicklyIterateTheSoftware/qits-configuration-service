@@ -91,6 +91,27 @@ class SoftwareReleaseListenerTest {
     assertEquals("qits-configuration/software-release-listener", service.actor);
   }
 
+  /**
+   * The editor image lands on the same application as the workspace image, under a key of its own —
+   * and its name opens with the workspace image's, so this is also the assertion that the match is a
+   * whole-name lookup rather than a prefix.
+   */
+  @Test
+  void workspaceEditorImageReleaseWritesTheEditorPin() {
+    CapturingService service = new CapturingService();
+    SoftwareReleaseListener listener = listenerWith(service);
+    EventFrame frame = frameFor("docker", "qits/workspace-editor", "2026.822.101500");
+
+    assertTrue(listener.selects(frame), "the workspace-editor docker image must be selected");
+    listener.onFrame(frame);
+
+    assertEquals(1, service.calls, "exactly one entry is written");
+    assertEquals("qits-workspaces", service.application);
+    assertEquals("env.QITS_EDITOR_IMAGE_VERSION", service.key);
+    assertEquals("2026.822.101500", service.value);
+    assertEquals("qits-configuration/software-release-listener", service.actor);
+  }
+
   @Test
   void aDifferentImageNameWritesNothing() {
     CapturingService service = new CapturingService();

@@ -17,16 +17,21 @@ import org.jboss.logging.Logger;
  * store as an env entry on the owning application.
  *
  * <p>The set of pins is a small immutable map from docker {@code packageName} to a {@link Pin} —
- * the application the entry lands on and the env-var key the deployer expands. Two images today:
+ * the application the entry lands on and the env-var key the deployer expands. Three images today:
  *
  * <ul>
  *   <li>{@code qits/project-agent} &rarr; {@code env.QITS_PROJECTS_AGENT_IMAGE_VERSION} on {@code
  *       qits-projects}
  *   <li>{@code qits/workspace} &rarr; {@code env.QITS_WORKSPACE_IMAGE_VERSION} on {@code
  *       qits-workspaces}
+ *   <li>{@code qits/workspace-editor} &rarr; {@code env.QITS_EDITOR_IMAGE_VERSION} on {@code
+ *       qits-workspaces}
  * </ul>
  *
- * <p>Adding a third is one more entry in {@link #PINS}; the match, the write, and the failure rules
+ * <p>Two of them land on the same application, which the map already allows: a pin is keyed by the
+ * released image, and nothing about the write assumes one entry per application.
+ *
+ * <p>Adding a fourth is one more entry in {@link #PINS}; the match, the write, and the failure rules
  * below all read from the map, so nothing else changes.
  *
  * <p><b>Why the bus rather than a call.</b> An owning application starts its image per container and
@@ -50,6 +55,10 @@ import org.jboss.logging.Logger;
  * {@code npm/maven/docker/daemon} — rather than through qits-ci's {@code CiArtifact.Type} enum, which
  * lives in a module this service does not (and should not) depend on. The name travels unqualified,
  * so it is matched unqualified.
+ *
+ * <p>The name match is a map lookup, which is to say <b>whole and exact, never a prefix</b>. That is
+ * load-bearing now that {@code qits/workspace} and {@code qits/workspace-editor} share an opening:
+ * they are two images with two pins, and a release of either must move its own key and only its own.
  *
  * <h2>Last-writer-wins, and why it is safe here</h2>
  *
@@ -105,7 +114,8 @@ public class SoftwareReleaseListener implements QitsDurableEventListener {
   static final Map<String, Pin> PINS =
       Map.of(
           "qits/project-agent", new Pin("qits-projects", "env.QITS_PROJECTS_AGENT_IMAGE_VERSION"),
-          "qits/workspace", new Pin("qits-workspaces", "env.QITS_WORKSPACE_IMAGE_VERSION"));
+          "qits/workspace", new Pin("qits-workspaces", "env.QITS_WORKSPACE_IMAGE_VERSION"),
+          "qits/workspace-editor", new Pin("qits-workspaces", "env.QITS_EDITOR_IMAGE_VERSION"));
 
   /**
    * The {@code SoftwareRelease} payload wire fields this listener reads, as a local record bound by
