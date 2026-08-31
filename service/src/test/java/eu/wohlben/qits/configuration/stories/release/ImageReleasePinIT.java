@@ -56,7 +56,7 @@ import org.junit.jupiter.api.TestMethodOrder;
  * The edge in the diagram is therefore {@code qits-configuration -> qits-events}, and it is the only
  * outgoing HTTP arrow in this whole catalogue that is not the startup fetch of the idp's keys.
  *
- * <p><b>And one of the three frames is deliberately ignored.</b> A {@code SoftwareRelease} is acted
+ * <p><b>And one of the four frames is deliberately ignored.</b> A {@code SoftwareRelease} is acted
  * on only when its {@code packageType} is {@code docker} and its {@code packageName} is an image
  * this service pins. The maven release of the same repository, published moments later and carrying
  * a much higher version, must not touch the pin — a version this service wrote from a jar's release
@@ -89,10 +89,15 @@ public class ImageReleasePinIT {
 
   static final String AGENT_IMAGE_KEY = "env.QITS_PROJECTS_AGENT_IMAGE_VERSION";
 
+  /** The editor image lands on qits-workspaces too, under a key of its own — two images, one app. */
+  static final String EDITOR_IMAGE_KEY = "env.QITS_EDITOR_IMAGE_VERSION";
+
   /** The versions this story releases. Authored literals: a value is not a path and is not scrubbed. */
   static final String WORKSPACE_VERSION = "2026.829.110000";
 
   static final String AGENT_VERSION = "2026.829.111000";
+
+  static final String EDITOR_VERSION = "2026.829.111500";
 
   /** The version the maven release carries, and which must never reach a pin. */
   static final String MAVEN_VERSION = "9999.1.1";
@@ -135,11 +140,14 @@ public class ImageReleasePinIT {
       reads it through the same resolved read every other extra comes through, and starts its
       containers on the image that was just released.
 
-      Three releases arrive together and only two are pins: the maven release of the same
-      repository carries a far higher version and is left alone, because a pin is keyed on the
-      docker package name and nothing else. Pulling rather than being pushed is what makes this
-      survive: a release announced while this service was restarting is still read back the next
-      time it sweeps.
+      Four releases arrive together and only three are pins: the workspace image and the editor
+      image both land on qits-workspaces, each under its own env key
+      (env.QITS_WORKSPACE_IMAGE_VERSION and env.QITS_EDITOR_IMAGE_VERSION), and the project agent's
+      lands on qits-projects. The maven release of the same repository carries a far higher version
+      and is left alone, because a pin is keyed on the docker package name and nothing else — and
+      qits/workspace-editor opening with qits/workspace does not make one a prefix of the other, the
+      match is the whole name. Pulling rather than being pushed is what makes this survive: a release
+      announced while this service was restarting is still read back the next time it sweeps.
       """)
   @UserflowRunsAfter({
     TokenValidationBootstrapIT.class,
@@ -177,9 +185,18 @@ public class ImageReleasePinIT {
                 PROJECTS,
                 AGENT_VERSION,
                 "docker",
-                "qits/project-agent")));
+                "qits/project-agent"),
+            // The editor image, whose name opens with the workspace image's: it is its own pin on the
+            // same application, and a release of it must move its own key and only its own.
+            StoryEventBus.softwareRelease(
+                "release-workspace-editor-image",
+                "2026-08-29T11:15:00Z",
+                WORKSPACES,
+                EDITOR_VERSION,
+                "docker",
+                "qits/workspace-editor")));
     story
-        .note("qits-ci announces three releases: two docker images and one jar of the same repository")
+        .note("qits-ci announces four releases: three docker images and one jar of the same repository")
         .as("releases-announced");
 
     assertEquals(
@@ -197,6 +214,14 @@ public class ImageReleasePinIT {
     story
         .note("so is the project agent's, on its own application — the pins are a map, not a special case")
         .as("agent-image-pinned");
+
+    assertEquals(
+        EDITOR_VERSION,
+        awaitPin(WORKSPACES, EDITOR_IMAGE_KEY),
+        "and the editor image's, on the same application the workspace image lands on");
+    story
+        .note("the editor image's version lands on qits-workspaces too, under a key of its own — two images, one application")
+        .as("editor-image-pinned");
 
     // The maven frame sat between the two, so it has been offered and skipped by now. This is what
     // says so: the pin is still the DOCKER version, not the jar's.
@@ -218,14 +243,16 @@ public class ImageReleasePinIT {
             .jsonPath()
             .getList("revisions");
     Map<String, Object> newest = revisions.stream().findFirst().orElseGet(() -> fail("no history"));
-    assertEquals(WORKSPACE_IMAGE_KEY, newest.get("key"));
-    assertEquals(WORKSPACE_VERSION, newest.get("value"));
+    // The editor image was the last of the three pins to be paged forward, so it is the newest
+    // revision on qits-workspaces — and it carries the same machine attribution as any other write.
+    assertEquals(EDITOR_IMAGE_KEY, newest.get("key"));
+    assertEquals(EDITOR_VERSION, newest.get("value"));
     assertEquals(
         LISTENER_ACTOR,
         newest.get("updatedBy"),
         "the write is attributed like any other — to the listener, by name");
     story
-        .note("the history records the pin as a revision, attributed to the listener that wrote it")
+        .note("the history records the newest pin — the editor image — as a revision, attributed to the listener that wrote it")
         .as("pin-attributed");
   }
 
@@ -279,6 +306,7 @@ public class ImageReleasePinIT {
     ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "releases-announced");
     ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "workspace-image-pinned");
     ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "agent-image-pinned");
+    ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "editor-image-pinned");
     ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "maven-release-ignored");
     ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "pin-attributed");
 
