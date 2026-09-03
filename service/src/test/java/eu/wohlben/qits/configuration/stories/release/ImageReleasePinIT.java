@@ -92,6 +92,14 @@ public class ImageReleasePinIT {
   /** The editor image lands on qits-workspaces too, under a key of its own — two images, one app. */
   static final String EDITOR_IMAGE_KEY = "env.QITS_EDITOR_IMAGE_VERSION";
 
+  /**
+   * …and the workspace image lands on qits-projects as well, under the key that application reads —
+   * one image, two applications, which is the other half of the map's shape. qits-projects starts a
+   * refinement container from the very image qits-workspaces starts a workspace from, so a single
+   * release has to reach both.
+   */
+  static final String REFINEMENT_IMAGE_KEY = "env.QITS_PROJECTS_REFINEMENT_IMAGE_VERSION";
+
   /** The versions this story releases. Authored literals: a value is not a path and is not scrubbed. */
   static final String WORKSPACE_VERSION = "2026.829.110000";
 
@@ -140,10 +148,14 @@ public class ImageReleasePinIT {
       reads it through the same resolved read every other extra comes through, and starts its
       containers on the image that was just released.
 
-      Four releases arrive together and only three are pins: the workspace image and the editor
-      image both land on qits-workspaces, each under its own env key
-      (env.QITS_WORKSPACE_IMAGE_VERSION and env.QITS_EDITOR_IMAGE_VERSION), and the project agent's
-      lands on qits-projects. The maven release of the same repository carries a far higher version
+      Four releases arrive together and only three are pins, but three pinned images are four
+      entries. The workspace image and the editor image both land on qits-workspaces, each under its
+      own env key (env.QITS_WORKSPACE_IMAGE_VERSION and env.QITS_EDITOR_IMAGE_VERSION), and the
+      project agent's lands on qits-projects. The workspace image lands on qits-projects too, as
+      env.QITS_PROJECTS_REFINEMENT_IMAGE_VERSION: a refinement container is started from the same
+      image a workspace is, so one release moves two applications at once — several images may share
+      an application, and one image may serve several. The maven release of the same repository
+      carries a far higher version
       and is left alone, because a pin is keyed on the docker package name and nothing else — and
       qits/workspace-editor opening with qits/workspace does not make one a prefix of the other, the
       match is the whole name. Pulling rather than being pushed is what makes this survive: a release
@@ -222,6 +234,18 @@ public class ImageReleasePinIT {
     story
         .note("the editor image's version lands on qits-workspaces too, under a key of its own — two images, one application")
         .as("editor-image-pinned");
+
+    // The other direction of the same map: ONE image, TWO applications. qits-projects starts its
+    // refinement containers from the workspace image, so the first frame of this story wrote here as
+    // well — the follow qits-projects-service used to run as a CI hop that rewrote a property and
+    // released the service to carry the number.
+    assertEquals(
+        WORKSPACE_VERSION,
+        awaitPin(PROJECTS, REFINEMENT_IMAGE_KEY),
+        "the workspace image must also reach the application that starts a refinement from it");
+    story
+        .note("the same workspace release reaches qits-projects as well — one image, two applications, and no release of either to carry it")
+        .as("refinement-image-pinned");
 
     // The maven frame sat between the two, so it has been offered and skipped by now. This is what
     // says so: the pin is still the DOCKER version, not the jar's.
@@ -307,6 +331,7 @@ public class ImageReleasePinIT {
     ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "workspace-image-pinned");
     ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "agent-image-pinned");
     ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "editor-image-pinned");
+    ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "refinement-image-pinned");
     ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "maven-release-ignored");
     ReportAssertions.assertStepId(CATEGORY, PINNED_SLUG, "pin-attributed");
 
