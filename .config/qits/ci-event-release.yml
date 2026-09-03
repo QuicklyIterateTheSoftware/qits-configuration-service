@@ -1,0 +1,138 @@
+# The release pipeline: this repository reacts to its OWN release and pushes the image under the
+# released VERSION. qits-docs' file, adapted to this repository's build.
+#
+# THIS FILE IS NEW, AND ITS ABSENCE WAS A HOLE RATHER THAN A DECISION. Every deployable sibling has
+# carried one since the split-release design landed; this repository never grew one, because while
+# cd deployed a green PUSH the sha image ci-event-build.yml pushed was enough to deploy from and
+# nobody noticed that no version coordinate existed. The new deployment flow deploys a RELEASE — it
+# asks for `qits/qits-configuration:<version>` — and per-push CI is retired, so without this file
+# nothing would publish an image for this application at all, ever.
+#
+# The short form of the rules that bite; qits-events' and qits-docs' files carry the long form:
+#
+# - THE SELECTION NAMING THIS REPOSITORY IS NOT A LOOP. `SCMRelease` says only "source control has
+#   this version" and qits-projects publishes it; nothing in this file publishes it. The event that
+#   could loop is SoftwareRelease, and this file neither listens for it nor publishes it.
+# - `artifacts:` IS A DECLARATION, NOT A REPORT. qits-ci never learns how to publish anything, so
+#   it cannot see what the step pushed; it announces on the strength of the line below. ONE entry,
+#   because this pipeline pushes one image and this repository publishes no jar, no npm package and
+#   no docs bundle — there is no committed docs/openapi.yml here to make an @apidocs entry true.
+# - THE NAME IS UNQUALIFIED ON PURPOSE — the registry is `qits-platform-artifacts:8080` inside a
+#   step container and `registry.dev.localhost:8080` outside, and an OCI reference cannot carry a
+#   path prefix. The reader supplies its own host, exactly as the push below composes one from
+#   environment. `qits/qits-configuration` is the image .config/qits/deployments.yml names as this
+#   repository's application, and the two must keep agreeing.
+# - NO SBOM IS UPLOADED, AND THAT IS A GAP THIS FILE INHERITS RATHER THAN CREATES. The siblings
+#   export a CycloneDX document from a `sbom` stage in their Dockerfile and PUT it beside the image;
+#   neither that stage nor the cyclonedx plugin exists in this repository yet. Adding them is a
+#   change to docker/Dockerfile and the poms, not to this file, and it belongs in the SBOM campaign
+#   rather than in the rollout that created this recipe.
+# - THE BUILD BELOW IS THE QA PIPELINE'S, AND THE TWO SHOULD STAY MATCHED.
+#   ci-event-release-request.yml's gating step is where the client prelude, the lockfile origin
+#   swap, the `npm_config_*` environment and the two docker flags are explained at length; this one
+#   carries the short form and points there rather than keeping a second copy of the reasoning to
+#   drift.
+# - THERE IS DELIBERATELY NO `checkout:`. The event's `branch` is the release request's backing
+#   branch (`release/<id>`), which qits-projects deletes in the same operation that creates the tag,
+#   so by the time this runs the branch the event names does not exist. A trigger with no
+#   `checkout:` is recorded at `main` and the step container clones `main`; the tag fetch below is
+#   what supplies the released tree. The version, never the branch, is what this file builds from.
+event: SCMRelease
+when:
+  - repository: { exact: qits-configuration-service }
+artifacts:
+  - { type: docker, name: qits/qits-configuration }
+steps:
+    # node-docker-base, the image the QA pipeline's gating step already uses: node, npm and git for
+    # half one, the docker CLI for half two — and node is also what reads the event payload, which
+    # is JSON.
+  - image: qits/build-images/node-docker-base:latest
+    docker: true
+    timeout-seconds: 3600
+    script: |
+      # The daemon runs this with `bash -c` and no -e, so without this a failed docker build is
+      # swallowed: the push fails, the run reports SUCCESS, and qits-ci announces a SoftwareRelease
+      # for an image that does not exist — which the deployment flow then tries to deploy. -u makes
+      # an unset registry variable stop the step too.
+      set -eu
+
+      # THE EVENT, READ AS DATA. The payload reaches the container verbatim as one string in
+      # $QITS_EVENT_PAYLOAD; there is no per-field projection.
+      version=$(node -p 'JSON.parse(process.env.QITS_EVENT_PAYLOAD).version')
+      # The version reaches a `sed` s### expression below, and `#` is that expression's own
+      # delimiter — a version carrying one closes it, and GNU sed's `e` command then runs a shell.
+      # Refused rather than quoted: a version here is a calver or a semver, and nothing legitimate
+      # needs a character outside this set.
+      case "$version" in
+        ''|*[!0-9A-Za-z._+-]*) echo "refusing an implausible version: $version" >&2; exit 1 ;;
+      esac
+      echo "releasing qits/qits-configuration:$version"
+
+      # THE TAG IS THE CHECKOUT TARGET, AND IT IS THE ONLY REF THIS PIPELINE MAY TRUST. An
+      # event-triggered run is cloned at the head of main; the released commit is not on main at
+      # this moment — the release flow tags the request's backing branch, deletes that branch,
+      # deploys, and finalizes main afterwards. So the clone is a way to have a working git
+      # repository and nothing more. It is shallow and carries no tags, hence the explicit refspec;
+      # the URL rather than `origin` because every address a step needs arrives as environment.
+      # `checkout --detach` peels the annotated tag to its commit — and it is what makes the
+      # submodule fetch below land on the qits-configuration-frontend gitlink the release recorded
+      # rather than on main's.
+      git fetch "$QITS_CI_REPOSITORY_URL" "refs/tags/$version:refs/tags/$version"
+      git checkout --detach "$version"
+
+      # --- half one: the client -----------------------------------------------------------------
+      # The daemon's clone is shallow and does not recurse, so service/src/main/webui arrives as an
+      # empty directory and the Dockerfile's `test -f` guard stops the image build on exactly that.
+      # The submodule is initialised from THIS platform's git host rather than from the .gitmodules
+      # URL, which names GitHub.
+      frontend_url="${QITS_CI_REPOSITORY_URL%/*}/qits-configuration-frontend"
+      git -c submodule.qits-configuration-frontend.url="$frontend_url" \
+        submodule update --init service/src/main/webui
+
+      cd service/src/main/webui
+      # TWO SERVICES since the byte-plane split, so the swap reads the PATH: an entry under the
+      # hosted registry's own pathname ($QITS_NPM_REGISTRY_URL's) gets the hosted origin and
+      # everything else gets the proxy's, and the broad expression has to run before the narrow one.
+      # ci-event-release-request.yml carries the full reasoning.
+      npm_hosted_origin=$(node -p 'new URL(process.env.QITS_NPM_REGISTRY_URL).origin')
+      npm_proxy_origin=$(node -p 'new URL(process.env.QITS_NPM_PROXY_URL).origin')
+      npm_hosted_path=$(node -p 'new URL(process.env.QITS_NPM_REGISTRY_URL).pathname')
+      sed -i -E \
+        -e "s#(\"resolved\": \")https?://[^/\"]+#\1$npm_proxy_origin#" \
+        -e "s#(\"resolved\": \")https?://[^/\"]+($npm_hosted_path)#\1$npm_hosted_origin\2#" \
+        package-lock.json
+
+      # ENVIRONMENT, not a file: npm ranks a project .npmrc above ~/.npmrc, and the submodule commits
+      # one — `npm_config_*` outranks both without touching its tree.
+      env npm_config_registry="$QITS_NPM_PROXY_URL" \
+          "npm_config_@qits:registry=$QITS_NPM_REGISTRY_URL" \
+          npm ci --no-audit --no-fund
+
+      # dist/qits-spa-configuration/browser — the bundle the image build consumes.
+      npm run build
+      cd -
+
+      # --- half two: the image ------------------------------------------------------------------
+      # --network host, NOT a custom network: buildkit — the builder format the platform targets,
+      # because a swarm cannot assume the legacy builder — refuses custom networks on a build. The
+      # maven registry's host-published address is derived from the same injected env, so no address
+      # is stated here; the build needs it because this repo depends on qits-db-core, qits-auth-core
+      # and qits-arch-rules.
+      #
+      # THE CREDENTIAL IS A SECRET MOUNT AND NEVER A BUILD ARG — an arg is recorded in the history
+      # of a pullable image. The launcher injects the run's commissioned idp client as
+      # $QITS_COMMISSIONED_CLIENT_ID/$QITS_COMMISSIONED_CLIENT_SECRET; the Dockerfile's mvnw RUN
+      # mounts both. Unconditional on purpose: a missing env source is NOT an error — measured on
+      # buildx v0.36.1 — so these lines are inert until a run carries the pair.
+      ref="$QITS_REGISTRY/$QITS_IMAGE_REPOSITORY/qits-configuration:$version"
+      docker build --network host \
+        --build-arg QITS_MAVEN_REPOSITORY_URL="http://$QITS_REGISTRY/artifacts/maven/maven" \
+        --build-arg QITS_MAVEN_CENTRAL_URL="${QITS_MAVEN_CENTRAL_MIRROR_URL:-}" \
+        --secret id=qits-client-id,env=QITS_COMMISSIONED_CLIENT_ID \
+        --secret id=qits-client-secret,env=QITS_COMMISSIONED_CLIENT_SECRET \
+        -t "$ref" -f docker/Dockerfile .
+      docker push "$ref"
+      # NO `docker rmi "$ref"`: on a CI host it frees nothing — the layers stay in the builder's
+      # cache either way — while under the containerd image store it drops the last reference to
+      # content a concurrent build of this same Dockerfile may still be resolving, which is the race
+      # that broke the release of 2026-08-11.
