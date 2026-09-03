@@ -3,7 +3,8 @@
 # rewrite: the run builds the pushed branch at the pushed sha, but the pipeline is DISCOVERED at main,
 # so a pushed branch can no longer alter the CI that gates it. `branches:` is gone from the steps
 # here (the run's branch is the trigger's single decision, from the payload) — the maintenance-branch
-# release step that carried one is its own trigger now, ci-event-maintenance-release.yml. suppressCi
+# release step that carried one became its own trigger, and is now gone entirely: qits-maintenance
+# asks the release door itself, with its own credential, on the push that creates the bump. suppressCi
 # restates what the post-receive convention did with `-o qits.no-ci`. Separate from
 # ci-event-userflows.yml on purpose: that run is non-gating, a red verify must not cost the image.
 event: SCMPublishCommit
