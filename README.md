@@ -136,8 +136,9 @@ would hand a JSON parser an HTML document on the one service whose answer decide
 starts with. One entry covers the segment, because the match is by prefix.
 
 **The bundle is built before the image, never inside it.** `@qits/ui-components` lives only on the
-platform's own npm registry, which no `RUN` in a docker build can reach; `.config/qits/ci-post-receive.yml`
-builds it in the step container, and `docker/Dockerfile` neuters Quinoa's install and build commands
+platform's own npm registry, which no `RUN` in a docker build can reach; the pipelines under
+`.config/qits/` (`ci-event-release-request.yml` at a release-request fold, `ci-event-release.yml` at
+a release) build it in the step container, and `docker/Dockerfile` neuters Quinoa's install and build commands
 and guards the staged bundle before the native compile.
 
 So a **clone-alone build now means clone AND `git submodule update --init`, with a node on PATH**:

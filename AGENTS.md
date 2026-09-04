@@ -170,8 +170,9 @@ pom, because Quinoa is in no BOM and its version does not track the platform's.
   give it a segment of its own, because an entry protects a segment and not a string prefix.
 - **The bundle is built OUTSIDE the docker build.** `@qits/ui-components` exists only on the
   platform's own npm registry, which a `RUN` reaches by no address at all — and npm's answer to a
-  registry that never connects is `Exit handler never called!`, naming neither. So
-  `.config/qits/ci-post-receive.yml` builds it in the step container (on qits-net) and the Dockerfile
+  registry that never connects is `Exit handler never called!`, naming neither. So the pipeline
+  builds it in the step container (on qits-net) — `.config/qits/ci-event-release-request.yml` at a
+  release-request fold, `ci-event-release.yml` at a release — and the Dockerfile
   neuters Quinoa's install/ci/build commands with `--version`, guards the staged bundle with a
   `test -f` before the multi-minute native compile, and `cp`s the bundle onto itself so Quinoa's
   MOVE does not hit overlayfs' EXDEV.
@@ -262,9 +263,9 @@ Five things about it are easy to undo:
   default.
 - **The story classes are opted in by NAME, not by `skipITs`.** The root pom keeps `skipITs=true`,
   because failsafe has one run per module and half of `PackagedSurfaceIT` is about the SPA, which the
-  userflow pipeline deliberately does not build (`-Dquarkus.quinoa=false`). The list is spelled in
-  `.config/qits/ci-event-userflows.yml` and repeated under § Userflows below; **a new story class has
-  to be added to it**, or it is written and never run.
+  userflow step deliberately does not build (`-Dquarkus.quinoa=false`). The list is spelled in the
+  non-gating step of `.config/qits/ci-event-release-request.yml` and repeated under § Userflows
+  below; **a new story class has to be added to it**, or it is written and never run.
 
 ## Userflows
 
@@ -379,7 +380,7 @@ half about the SPA, so the opt-in is per-run and per-class. The class orderer is
 Quarkus permits — the `junit.quarkus.orderer.secondary-orderer` line in `service`'s test properties; a
 local `junit-platform.properties` hard-fails surefire.
 
-`.config/qits/ci-event-userflows.yml` publishes the reports per commit as the docs bundle
-`@userflows/qits-configuration`, and is **non-gating by design**: it is a separate file from
-`ci-post-receive.yml` so a red story does not cost the branch its image. It runs exactly the list
-above.
+The non-gating step of `.config/qits/ci-event-release-request.yml` publishes the reports as the docs
+bundle `@userflows/qits-configuration`, once per release-request fold — per-push CI is retired and
+there is nothing to run per commit. It carries `gating: false` **by design**: a red story fails the
+run and shows red, but does not hold the request's build gate. It runs exactly the list above.
