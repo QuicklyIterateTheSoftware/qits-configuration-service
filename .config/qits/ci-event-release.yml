@@ -27,6 +27,18 @@
 #   exports it and PUTs it beside the image, the shape qits-observability and qits-docs already
 #   carry. It rides THIS pipeline rather than the QA one because a bill of materials belongs to a
 #   released version: the gating run publishes no artifact, so it owes no document.
+# - A CHANGE TO THIS FILE TAKES EFFECT ONE RELEASE LATE, AND THAT IS NOT A BUG TO FIX HERE.
+#   qits-ci resolves a trigger file against the head of `main` at the moment the event arrives, and
+#   the release flow finalizes main AFTER it tags and announces — so the run that ships version N is
+#   steered by the copy of this file that was on main before N landed. Measured on 2026.904.181427,
+#   the release that added the block below: `configPath` was this path, `commitSha` was the
+#   PREVIOUS main (0de9f54), the image was pushed, and no SBOM went up, because the recipe qits-ci
+#   read did not yet have one. Nothing was wrong with the release and nothing was wrong with the
+#   change; they were simply one step apart. The BUILD does not share the lag — the step fetches the
+#   tag and checks it out, so docker/Dockerfile and every source file come from the released tree.
+#   Only the steps themselves are a release behind. So: when a change to this file must be proven,
+#   prove it on the NEXT release rather than on its own, and do not read a missing artifact on the
+#   release that introduced its step as a failure.
 # - THE BUILD BELOW IS THE QA PIPELINE'S, AND THE TWO SHOULD STAY MATCHED.
 #   ci-event-release-request.yml's gating step is where the client prelude, the lockfile origin
 #   swap, the `npm_config_*` environment and the two docker flags are explained at length; this one
