@@ -1,6 +1,7 @@
 package eu.wohlben.qits.configuration.control;
 
 import eu.wohlben.qits.configuration.dto.ApplicationSummaryDto;
+import eu.wohlben.qits.configuration.dto.ImagePinDto;
 import eu.wohlben.qits.configuration.dto.ImportSummaryDto;
 import eu.wohlben.qits.configuration.dto.ResolvedConfigurationDto;
 import eu.wohlben.qits.configuration.entity.ConfigurationEntry;
@@ -105,6 +106,38 @@ public class ConfigurationService {
       properties.put(ExtrasProperties.propertyName(app, entry.entryKey), entry.entryValue);
     }
     return new ResolvedConfigurationDto(revisions.headRevisionOf(app), properties);
+  }
+
+  /**
+   * THE PIN REPORT: every {@link ImagePins} mapping that currently has a stored version, in the
+   * answer's fixed order.
+   *
+   * <p><b>An entry with nothing stored is omitted rather than answered blank.</b> No entry means the
+   * image has never been released into this environment, so there is no version, and a row carrying
+   * an empty one would name a tag that cannot exist. Every mapping missing is an empty list, which
+   * is a complete answer and not an error — a platform that has released nothing pins nothing.
+   *
+   * <p>It reads the head rows one mapping at a time, which is four point-reads on a primary key
+   * today. A listing filtered in memory would be shorter to write and would quietly grow with the
+   * table instead of with the map.
+   *
+   * <p>Not wrapped in a retry, like every other read here: the caller — qits-artifacts' collector,
+   * deciding what it may delete — has its own posture about an unreachable configuration service,
+   * and it is a fail-closed one. Patience here would only make its deadline arrive with less
+   * information.
+   */
+  public List<ImagePinDto> imagePins() {
+    List<ImagePinDto> pins = new ArrayList<>(ImagePins.ORDERED.size());
+    for (ImagePins.Pin pin : ImagePins.ORDERED) {
+      entries
+          .findEntry(pin.application(), pin.key())
+          .map(entry -> entry.entryValue)
+          .filter(version -> !version.isBlank())
+          .ifPresent(
+              version ->
+                  pins.add(new ImagePinDto(pin.image(), version, pin.application(), pin.key())));
+    }
+    return pins;
   }
 
   /** One application's history, newest first. */

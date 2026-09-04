@@ -1,6 +1,8 @@
 package eu.wohlben.qits.configuration.bus;
 
 import eu.wohlben.qits.configuration.control.ConfigurationService;
+import eu.wohlben.qits.configuration.control.ImagePins;
+import eu.wohlben.qits.configuration.control.ImagePins.Pin;
 import eu.wohlben.qits.configuration.entity.ConfigurationEntry;
 import eu.wohlben.qits.eventstream.QitsDurableEventListener;
 import eu.wohlben.qits.eventstream.control.CanonicalJson;
@@ -8,7 +10,6 @@ import eu.wohlben.qits.eventstream.control.EventFrame;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import org.jboss.logging.Logger;
 
@@ -17,31 +18,13 @@ import org.jboss.logging.Logger;
  * released package is a docker image this service pins, writes its version into this service's own
  * store as an env entry on the owning application.
  *
- * <p>The set of pins is a small immutable map from docker {@code packageName} to the {@link Pin}s
- * that image moves — each naming the application the entry lands on and the env-var key the deployer
- * expands. Three images and four pins today:
- *
- * <ul>
- *   <li>{@code qits/project-agent} &rarr; {@code env.QITS_PROJECTS_AGENT_IMAGE_VERSION} on {@code
- *       qits-projects}
- *   <li>{@code qits/workspace} &rarr; {@code env.QITS_WORKSPACE_IMAGE_VERSION} on {@code
- *       qits-workspaces}, <b>and</b> {@code env.QITS_PROJECTS_REFINEMENT_IMAGE_VERSION} on {@code
- *       qits-projects}
- *   <li>{@code qits/workspace-editor} &rarr; {@code env.QITS_EDITOR_IMAGE_VERSION} on {@code
- *       qits-workspaces}
- * </ul>
- *
- * <p><b>Two shapes of sharing, and the map allows both.</b> Several images may land on one
- * application — the workspace and editor pins do — because a pin is keyed by the released image and
- * nothing about the write assumes one entry per application. And one image may land on several
- * applications, which is why the value is a list: {@code qits/workspace} is the toolchain-plus-daemon
- * image that qits-workspaces starts a workspace from and qits-projects starts a refinement container
- * from, so a single release of it has to move two independent keys on two applications. Writing it as
- * two entries under one key rather than two keys keeps the match a whole-name lookup.
- *
- * <p>Adding a pin is one more entry in {@link #PINS} — a new key, or one more {@link Pin} beside an
- * existing key's; the match, the write, and the failure rules below all read from the map, so nothing
- * else changes.
+ * <p><b>The pins themselves are {@link ImagePins} and are not written down here.</b> That class holds
+ * the one list — which image moves which key on which application — and {@link ImagePins#BY_IMAGE} is
+ * the view this listener matches against: docker {@code packageName} to every {@link Pin} that image
+ * moves. {@code api/ImagePinsController} reports the same list resolved against the stored values, and
+ * a private copy on either side would let the pin mechanism and the pin report disagree about what
+ * this platform launches. Adding a pin is one more entry over there; the match, the write and the
+ * failure rules below all read from the map, so nothing here changes.
  *
  * <p><b>What these pins replaced.</b> Each one used to be a per-repository CI hop
  * ({@code .config/qits/ci-event-upstream-*.yml}) that caught the same {@code SoftwareRelease},
@@ -67,8 +50,8 @@ import org.jboss.logging.Logger;
  * <h2>The match, and why by the wire strings</h2>
  *
  * <p>A {@code SoftwareRelease} is acted on only when its {@code packageType} is {@code "docker"} and
- * its {@code packageName} is a key of {@link #PINS}. Both are compared as the literal wire values
- * qits-ci publishes — the {@code SoftwareRelease} javadoc fixes {@code packageType}'s vocabulary as
+ * its {@code packageName} is a key of {@link ImagePins#BY_IMAGE}. Both are compared as the literal
+ * wire values qits-ci publishes — the {@code SoftwareRelease} javadoc fixes {@code packageType}'s vocabulary as
  * {@code npm/maven/docker/daemon} — rather than through qits-ci's {@code CiArtifact.Type} enum, which
  * lives in a module this service does not (and should not) depend on. The name travels unqualified,
  * so it is matched unqualified.
@@ -121,34 +104,6 @@ public class SoftwareReleaseListener implements QitsDurableEventListener {
 
   /** Who the revision records as the writer, the way {@code ConfigurationController.actor()} does. */
   static final String ACTOR = "qits-configuration/software-release-listener";
-
-  /** Where a released image version lands: the application, then the env-var key the deployer expands. */
-  record Pin(String application, String key) {}
-
-  /**
-   * The docker images this service pins, keyed by the unqualified {@code packageName} qits-ci
-   * publishes, each holding every pin that image moves. Add an image by adding a key; teach an
-   * existing image a second consumer by adding a {@link Pin} to its list.
-   *
-   * <p><b>The key spelling is the env override of the property the consumer reads</b>, not a name
-   * invented here. SmallRye maps {@code QITS_PROJECTS_REFINEMENT_IMAGE_VERSION} onto {@code
-   * qits.projects.refinement-image-version} by its own uppercase-and-underscore rule and lets the env
-   * win over the committed default, so a key that does not transcribe an existing property writes an
-   * entry the consumer never reads — and says nothing about it at any log level.
-   */
-  static final Map<String, List<Pin>> PINS =
-      Map.of(
-          "qits/project-agent",
-              List.of(new Pin("qits-projects", "env.QITS_PROJECTS_AGENT_IMAGE_VERSION")),
-          "qits/workspace",
-              List.of(
-                  new Pin("qits-workspaces", "env.QITS_WORKSPACE_IMAGE_VERSION"),
-                  // qits-projects starts its refinement containers from the same image
-                  // (refinementhost/RefinementContainerFactory), so its release moves this key too —
-                  // formerly qits-projects-service's ci-event-upstream-workspace-daemon.yml.
-                  new Pin("qits-projects", "env.QITS_PROJECTS_REFINEMENT_IMAGE_VERSION")),
-          "qits/workspace-editor",
-              List.of(new Pin("qits-workspaces", "env.QITS_EDITOR_IMAGE_VERSION")));
 
   /**
    * The {@code SoftwareRelease} payload wire fields this listener reads, as a local record bound by
@@ -235,7 +190,7 @@ public class SoftwareReleaseListener implements QitsDurableEventListener {
     if (!DOCKER_TYPE.equals(p.packageType())) {
       return null;
     }
-    List<Pin> pins = PINS.get(p.packageName());
+    List<Pin> pins = ImagePins.BY_IMAGE.get(p.packageName());
     if (pins == null) {
       return null;
     }

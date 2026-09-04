@@ -80,6 +80,20 @@ that line. Reads are deliberately not wrapped: the deployer has its own timeout 
 about an unreachable configuration service, and patience here would only make its deadline arrive
 with less information.
 
+## The image pins are one list
+
+`configuration/control/ImagePins` holds which docker image moves which key on which application, and
+**both paths derive from it**: `bus/SoftwareReleaseListener` matches a release against
+`ImagePins.BY_IMAGE` and writes, `api/ImagePinsController` walks `ImagePins.ORDERED` and reports what
+is stored. A private copy on either side would let the pin mechanism and the pin report disagree
+about what this platform launches, and the report is the one qits-artifacts' collector holds against
+age when it decides which images it may delete — a configured version is pulled *cold*, so no access
+timestamp on the registry implies it.
+
+Adding a pin is one more `Pin` in `ImagePins.AUTHORED`. The answer's order (image, application, key)
+is sorted from that list rather than trusted to how it is typed, because a machine diffs one run's
+answer against the last one's.
+
 ## Identity: two tracks, one set of roles
 
 Authentication happens elsewhere. A request with no `Authorization` header is USER traffic —

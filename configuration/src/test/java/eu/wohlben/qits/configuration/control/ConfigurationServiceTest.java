@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import eu.wohlben.qits.configuration.dto.ApplicationSummaryDto;
+import eu.wohlben.qits.configuration.dto.ImagePinDto;
 import eu.wohlben.qits.configuration.dto.ImportSummaryDto;
 import eu.wohlben.qits.configuration.dto.ResolvedConfigurationDto;
 import eu.wohlben.qits.configuration.entity.ConfigurationEntry;
@@ -202,6 +203,44 @@ class ConfigurationServiceTest {
     assertTrue(
         configuration.entriesOf("app-atomic").isEmpty(),
         "the good line ahead of the bad one must not have survived");
+  }
+
+  /**
+   * The pin report, walked in one method on purpose: "nothing pinned is an empty answer" is a claim
+   * about a store no pin has been written into, and this suite shares one database across classes —
+   * so it is asserted before this test writes rather than from a second method that might run after
+   * it.
+   *
+   * <p>The application names here are the platform's real ones, because the map is a compile-time
+   * constant and there is no pin on an invented application to write. Nothing else in this module
+   * touches them.
+   */
+  @Test
+  void thePinReportAnswersWhatIsStoredAndOmitsWhatWasNeverReleased() {
+    assertTrue(
+        configuration.imagePins().isEmpty(),
+        "an environment that has released nothing pins nothing — not four rows with no version");
+
+    configuration.upsert(
+        "qits-projects", "env.QITS_PROJECTS_AGENT_IMAGE_VERSION", "2026.904.160152", "alice");
+    configuration.upsert(
+        "qits-workspaces", "env.QITS_WORKSPACE_IMAGE_VERSION", "2026.904.160522", "alice");
+
+    assertEquals(
+        List.of(
+            new ImagePinDto(
+                "qits/project-agent",
+                "2026.904.160152",
+                "qits-projects",
+                "env.QITS_PROJECTS_AGENT_IMAGE_VERSION"),
+            new ImagePinDto(
+                "qits/workspace",
+                "2026.904.160522",
+                "qits-workspaces",
+                "env.QITS_WORKSPACE_IMAGE_VERSION")),
+        configuration.imagePins(),
+        "the two unreleased mappings are omitted, and the refinement key of the workspace image is"
+            + " one of them — the image is released, that entry is not written");
   }
 
   @Test

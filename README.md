@@ -64,10 +64,28 @@ qits-platform-idp). There is no anonymous route.
 | `DELETE /applications/{app}/entries/{key}` | remove one entry, keeping it in the history |
 | `GET /applications/{app}/history` | every revision, newest first |
 | `POST /import` | `text/plain`, an extras properties file whole. Idempotent; answers `{imported, unchanged, ignored}` |
+| `GET /pins` | the configured container-image versions — `{generatedAt, pins:[{image, version, application, key}]}` |
 
 The resolved read carries **complete property names** on purpose: a consumer layers the map as a
 configuration source verbatim, with no prefix to re-assemble and no second place for the deployer's
 namespace to be written down. That namespace has moved twice already.
+
+### The pin report
+
+`GET /pins` answers one row per image→(application, key) mapping in `control/ImagePins` that
+currently has a stored version, ordered by image, then application, then key. An image appears twice
+when two applications start it — `qits/workspace` is a workspace and a refinement container — and a
+mapping with nothing stored is **omitted**, because an image nobody has released here has no version
+to name. An empty `pins` is an ordinary 200.
+
+It is a projection of entries a caller could read one at a time; what it adds is **the map**, which
+lives in this service and nowhere else. **qits-artifacts' garbage collector reads it as a pin
+source**: a configured version is one a container launch will pull *cold*, so the registry's own
+last-accessed record says nothing about it and deleting it is a workspace that will not start. An
+image outside the map is not launchable-by-configuration and needs no row.
+
+The same list is what `bus/SoftwareReleaseListener` matches a release against — one definition, so
+the pin mechanism and the pin report cannot disagree.
 
 The framework's own paths sit under `/configuration/q` — `/configuration/q/health/ready` is what the
 deployer's health gate curls, and `/configuration/q/openapi` is the document.

@@ -3,6 +3,7 @@ package eu.wohlben.qits.configuration.api;
 import eu.wohlben.qits.configuration.dto.ApplicationSummaryDto;
 import eu.wohlben.qits.configuration.dto.ConfigurationEntryDto;
 import eu.wohlben.qits.configuration.dto.ConfigurationRevisionDto;
+import eu.wohlben.qits.configuration.dto.ImagePinDto;
 import eu.wohlben.qits.configuration.dto.ImportSummaryDto;
 import eu.wohlben.qits.configuration.dto.ResolvedConfigurationDto;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -27,10 +28,12 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
       ConfigurationController.ListHistoryResponse.class,
       ConfigurationController.SetEntryRequest.class,
       ConfigurationController.SetEntryRequest.Response.class,
+      ImagePinsController.ListPinsResponse.class,
       ApplicationSummaryDto.class,
       ConfigurationEntryDto.class,
       ConfigurationRevisionDto.class,
       ResolvedConfigurationDto.class,
+      ImagePinDto.class,
       ImportSummaryDto.class
     })
 final class ApiWireReflection {
