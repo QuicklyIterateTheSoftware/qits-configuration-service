@@ -105,7 +105,14 @@ class AgentReadAccessTest {
         .put(entry())
         .then()
         .statusCode(403);
-    asAgent().when().delete(entry()).then().statusCode(403);
+    // The client shows this message to a person, so a 403 carries one like every other refusal.
+    asAgent()
+        .when()
+        .delete(entry())
+        .then()
+        .statusCode(403)
+        .contentType(ContentType.JSON)
+        .body("message", org.hamcrest.Matchers.notNullValue());
     asAgent()
         .contentType(ContentType.TEXT)
         .body("qits.platform.deployments.extras." + APP + ".env.QITS_AGENT_READS=three\n")

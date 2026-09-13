@@ -190,8 +190,9 @@ To probe the packaged artifact as well:
 
     configuration/  the domain — entity, persistence, control, dto, mapper, error. No JAX-RS. Owns
                     the datasource, the persistence unit and the Flyway lineage.
-    service/        the adapters — the JAX-RS routes, the exception mapper, and the native-image
-                    reflection registration for what Jackson binds.
+    service/        the adapters — the JAX-RS routes, the exception mappers (every 4xx, the
+                    security layer's 401 and 403 too, has the body {"message": "..."}), and the
+                    native-image reflection registration for what Jackson binds.
 
     service/src/main/webui/  the client — qits-configuration-platform-frontend, a git submodule. Quinoa
                              builds it during `package` and serves it at / on this service's own

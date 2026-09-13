@@ -132,7 +132,13 @@ public class AccessRefusalIT {
   void anAnonymousCallerIsRefusedEverything(Interactions story) {
     NetworkCapture.actor(ANONYMOUS);
 
-    given().when().get(StoryTarget.APPLICATIONS_PATH).then().statusCode(401);
+    given()
+        .when()
+        .get(StoryTarget.APPLICATIONS_PATH)
+        .then()
+        .statusCode(401)
+        .contentType(ContentType.JSON)
+        .body("message", org.hamcrest.Matchers.notNullValue());
     story.note("the overview of every configured application is not public").as("overview-refused");
 
     given()
@@ -199,7 +205,9 @@ public class AccessRefusalIT {
         .when()
         .put(StoryTarget.entryPath(APPLICATION, KEY))
         .then()
-        .statusCode(403);
+        .statusCode(403)
+        .contentType(ContentType.JSON)
+        .body("message", org.hamcrest.Matchers.notNullValue());
     story.note("and the write even less").as("write-forbidden");
 
     assertEquals(
