@@ -68,9 +68,9 @@
              qits-integrations-quarkus. The url is a property so the image build can point it at the
              address the builder container can actually reach — see docker/Dockerfile and
              .qits-maven-settings.xml. -->
-        <qits.db-core.version>2026.906.171046</qits.db-core.version>
-        <qits.auth-core.version>2026.906.171046</qits.auth-core.version>
-        <qits.arch-rules.version>2026.906.171046</qits.arch-rules.version>
+        <qits.db-core.version>2026.913.81413</qits.db-core.version>
+        <qits.auth-core.version>2026.913.81413</qits.auth-core.version>
+        <qits.arch-rules.version>2026.913.81413</qits.arch-rules.version>
         <!-- The user-story framework (test scope everywhere): service/src/test/.../stories/ and
              api/TokenValidationBootstrapIT are written as @UserStory methods, so a `verify` with
              the ITs opted in also regenerates service/target/userstories/ — the catalogue's own
@@ -82,7 +82,7 @@
         <!-- The recording service mocks the story ITs boot against (the generic MockService plus
              idp.MockIdp), released out of libs/qits-integrations-quarkus like the three jars above
              — the same-string policy applies the day this repo consumes a newer reactor of it. -->
-        <qits.service-mock.version>2026.906.171046</qits.service-mock.version>
+        <qits.service-mock.version>2026.913.81413</qits.service-mock.version>
         <!-- The platform event bus client (qits-eventstream). This service SUBSCRIBES: it consumes
              qits-ci's `SoftwareRelease` off the durable bus and, for the project-agent image, writes
              the released version into its own config store. The eventstream jar brings the outbox
